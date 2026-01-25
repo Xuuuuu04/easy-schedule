@@ -55,26 +55,44 @@ python -m backend.main
 ```
 访问 `http://localhost:9001` 即可使用。
 
-## 📦 部署 (Linux)
+## 📦 部署指南 (Linux/Server)
+
+本项目的 `deploy/` 目录包含标准化的部署脚本，推荐使用以下流程。
+
+### 1. 首次部署
 
 ```bash
 # 1. 克隆代码
 git clone git@gitcode.com:mumu_xsy/easyschedule.git
 cd easyschedule
 
-# 2. 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate
+# 2. 数据库初始化 (解决权限问题)
+# 请确保 MySQL 服务已启动。将创建专用用户 schedule_user。
+# 需要输入 root 密码
+sudo mysql < deploy/init_db.sql
 
-# 3. 安装依赖
-pip install -r requirements.txt
+# 3. 配置环境变量
+cp .env.example .env
+vim .env
+# 确保填写:
+# DB_USER=schedule_user
+# DB_PASSWORD=schedule_pass_2024
+# DB_NAME=schedule_db
+# 以及 SILICON_FLOW_API_KEY
 
-# 4. 配置 .env
-# (参考上方配置)
-
-# 5. 启动服务 (后台运行)
-nohup uvicorn backend.main:app --host 0.0.0.0 --port 9001 > output.log 2>&1 &
+# 4. 启动服务
+chmod +x deploy/update.sh
+./deploy/update.sh
 ```
+
+### 2. 更新部署 (日常维护)
+
+当本地代码修改并推送后，在服务器执行：
+
+```bash
+./deploy/update.sh
+```
+该脚本会自动拉取代码、更新依赖并重启服务。
 
 ## 🛠️ AI 工具集
 
