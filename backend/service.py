@@ -1,281 +1,313 @@
 """
-数据库服务层 - 使用 SQLAlchemy ORM
+数据库服务层 - 使用 MySQL 替代 JSON 文件存储
 遵循 SOLID 原则：单一职责，所有数据访问集中在此模块
 """
+import pymysql
 from typing import List, Optional, Dict
 from datetime import datetime
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from contextlib import contextmanager
 from .models import Course, CourseCreate, CourseUpdate, Student, StudentCreate, StudentUpdate
-from .db_models import StudentModel, CourseModel
-from .database import SessionLocal
 
-# ==================== 辅助函数 ====================
+# ==================== 数据库配置 ====================
 
-def get_db_session():
-    """获取数据库会话 (用于非 FastAPI 依赖场景，如 Tools)"""
-    return SessionLocal()
+DB_CONFIG = {
+    "host": "8.155.162.119",
+    "port": 3306,
+    "user": "root",
+    "password": "xsy19507",
+    "database": "course_scheduling",
+    "charset": "utf8mb4",
+    "autocommit": False
+}
+
+
+@contextmanager
+def get_db_cursor():
+    """
+    数据库连接上下文管理器
+    自动处理连接的获取和释放，确保资源安全
+    """
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        yield cursor
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
 
 # ==================== 学生服务 ====================
 
-def get_all_students(limit: int = 100, offset: int = 0, name_filter: Optional[str] = None) -> List[Student]:
-    """获取所有学生 (支持分页和筛选)"""
-    with get_db_session() as db:
-        query = db.query(StudentModel)
-        
-        if name_filter:
-            query = query.filter(StudentModel.name.contains(name_filter))
-            
-        students = query.order_by(StudentModel.id).offset(offset).limit(limit).all()
-        return [Student(**s.__dict__) for s in students]
+def get_all_students() -> List[Student]:
+    """获取所有学生"""
+    with get_db_cursor() as cursor:
+        cursor.execute("SELECT * FROM students ORDER BY id")
+        return [Student(**row) for row in cursor.fetchall()]
 
 
 def get_student(student_id: int) -> Optional[Student]:
     """根据 ID 获取学生"""
-    with get_db_session() as db:
-        student = db.query(StudentModel).filter(StudentModel.id == student_id).first()
-        return Student(**student.__dict__) if student else None
+    with get_db_cursor() as cursor:
+        cursor.execute("SELECT * FROM students WHERE id = %s", (student_id,))
+        row = cursor.fetchone()
+        return Student(**row) if row else None
 
 
 def get_student_by_name(name: str) -> Optional[Student]:
     """根据姓名获取学生"""
-    with get_db_session() as db:
-        student = db.query(StudentModel).filter(StudentModel.name == name).first()
-        return Student(**student.__dict__) if student else None
+    with get_db_cursor() as cursor:
+        cursor.execute("SELECT * FROM students WHERE name = %s", (name,))
+        row = cursor.fetchone()
+        return Student(**row) if row else None
 
 
 def create_student(student_in: StudentCreate) -> Student:
-    """创建新学生"""
-    with get_db_session() as db:
-        db_student = StudentModel(
-            name=student_in.name,
-            grade=student_in.grade,
-            phone=student_in.phone,
-            parent_contact=student_in.parent_contact,
-            progress=student_in.progress,
-            notes=student_in.notes
-        )
-        db.add(db_student)
-        db.commit()
-        db.refresh(db_student)
-        return Student(**db_student.__dict__)
+    """创建新学生，ID 由数据库自增生成"""
+    with get_db_cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO students (name, grade, phone, parent_contact, progress, notes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            student_in.name,
+            student_in.grade,
+            student_in.phone,
+            student_in.parent_contact,
+            student_in.progress if student_in.progress is not None else 0,
+            student_in.notes
+        ))
+        new_id = cursor.lastrowid
+        # 获取完整记录
+        cursor.execute("SELECT * FROM students WHERE id = %s", (new_id,))
+        return Student(**cursor.fetchone())
 
 
 def update_student(student_id: int, student_in: StudentUpdate) -> Optional[Student]:
     """更新学生信息"""
-    with get_db_session() as db:
-        db_student = db.query(StudentModel).filter(StudentModel.id == student_id).first()
-        if not db_student:
-            return None
-        
+    with get_db_cursor() as cursor:
+        # 构建动态 UPDATE 语句
         update_data = student_in.dict(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_student, key, value)
-        
-        db.commit()
-        db.refresh(db_student)
-        return Student(**db_student.__dict__)
+        if not update_data:
+            return get_student(student_id)
+
+        set_clause = ", ".join(f"{k} = %s" for k in update_data.keys())
+        values = list(update_data.values()) + [student_id]
+
+        cursor.execute(
+            f"UPDATE students SET {set_clause} WHERE id = %s",
+            values
+        )
+
+        if cursor.rowcount > 0:
+            return get_student(student_id)
+        return None
 
 
 def delete_student(student_id: int) -> bool:
-    """删除学生 (级联删除由 SQLAlchemy 模型关系处理)"""
-    with get_db_session() as db:
-        db_student = db.query(StudentModel).filter(StudentModel.id == student_id).first()
-        if not db_student:
-            return False
-        
-        db.delete(db_student)
-        db.commit()
-        return True
+    """
+    删除学生
+    级联删除由数据库外键约束自动处理
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute("DELETE FROM students WHERE id = %s", (student_id,))
+        return cursor.rowcount > 0
 
 
 # ==================== 课程服务 ====================
 
-def get_all_courses(limit: int = 100, offset: int = 0, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Course]:
-    """获取所有课程 (支持分页和日期筛选)"""
-    with get_db_session() as db:
-        query = db.query(CourseModel)
-        
-        if start_date:
-            try:
-                start_dt = datetime.fromisoformat(start_date)
-                query = query.filter(CourseModel.start >= start_dt)
-            except ValueError:
-                pass # Ignore invalid date format
-                
-        if end_date:
-            try:
-                end_dt = datetime.fromisoformat(end_date)
-                query = query.filter(CourseModel.end <= end_dt)
-            except ValueError:
-                pass
+def _enrich_course_with_student(course_data: dict) -> dict:
+    """
+    为课程数据填充学生信息（计算字段）
+    DRY 原则：统一处理学生信息填充
+    """
+    student = get_student(course_data['student_id'])
+    if student:
+        course_data['student_name'] = student.name
+        course_data['student_grade'] = student.grade
+    else:
+        course_data['student_name'] = "未知学生"
+        course_data['student_grade'] = ""
+    return course_data
 
-        courses = query.order_by(CourseModel.start).offset(offset).limit(limit).all()
-        
-        # 转换为 Pydantic 模型，手动填充学生信息
-        result = []
-        for c in courses:
-            c_dict = c.__dict__.copy()
-            if c.student:
-                c_dict['student_name'] = c.student.name
-                c_dict['student_grade'] = c.student.grade
-            else:
-                c_dict['student_name'] = "未知学生"
-                c_dict['student_grade'] = ""
-            result.append(Course(**c_dict))
-            
-        return result
+
+def get_all_courses() -> List[Course]:
+    """
+    获取所有课程，带学生信息
+    数据库通过 JOIN 一次查询完成，比 JSON 方式更高效
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute("""
+            SELECT c.*,
+                   s.name as student_name,
+                   s.grade as student_grade
+            FROM courses c
+            LEFT JOIN students s ON c.student_id = s.id
+            ORDER BY c.start
+        """)
+        return [Course(**row) for row in cursor.fetchall()]
 
 
 def get_course(course_id: str) -> Optional[Course]:
     """根据 UUID 获取单个课程"""
-    with get_db_session() as db:
-        course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
-        if not course:
-            return None
-            
-        c_dict = course.__dict__.copy()
-        if course.student:
-            c_dict['student_name'] = course.student.name
-            c_dict['student_grade'] = course.student.grade
-        else:
-            c_dict['student_name'] = "未知学生"
-            c_dict['student_grade'] = ""
-            
-        return Course(**c_dict)
+    with get_db_cursor() as cursor:
+        cursor.execute("""
+            SELECT c.*,
+                   s.name as student_name,
+                   s.grade as student_grade
+            FROM courses c
+            LEFT JOIN students s ON c.student_id = s.id
+            WHERE c.id = %s
+        """, (course_id,))
+        row = cursor.fetchone()
+        return Course(**row) if row else None
 
 
 def create_course(course_in: CourseCreate) -> Course:
-    """创建新课程"""
-    with get_db_session() as db:
-        # 验证学生是否存在
-        student = db.query(StudentModel).filter(StudentModel.id == course_in.student_id).first()
-        if not student:
+    """
+    创建新课程
+    学生存在性由数据库外键约束保证
+    """
+    import uuid
+
+    with get_db_cursor() as cursor:
+        course_id = str(uuid.uuid4())
+
+        # 验证学生存在 - 直接查询，不需要额外函数调用
+        cursor.execute("SELECT * FROM students WHERE id = %s", (course_in.student_id,))
+        student_row = cursor.fetchone()
+        if not student_row:
             raise ValueError(f"Student with id {course_in.student_id} not found")
 
-        db_course = CourseModel(
-            title=course_in.title,
-            start=course_in.start,
-            end=course_in.end,
-            student_id=course_in.student_id,
-            price=course_in.price,
-            color=course_in.color or "#F5A3C8",
-            description=course_in.description,
-            location=course_in.location
-        )
-        db.add(db_course)
-        db.commit()
-        db.refresh(db_course)
-        
-        # 返回带学生信息的完整对象
-        c_dict = db_course.__dict__.copy()
-        c_dict['student_name'] = student.name
-        c_dict['student_grade'] = student.grade
-        return Course(**c_dict)
+        # 插入课程
+        cursor.execute("""
+            INSERT INTO courses (id, title, start, end, student_id, price, color, description, location)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            course_id,
+            course_in.title,
+            course_in.start,
+            course_in.end,
+            course_in.student_id,
+            course_in.price,
+            course_in.color if course_in.color else "#F5A3C8",
+            course_in.description,
+            course_in.location
+        ))
+
+        # 在同一个事务中查询刚插入的数据
+        cursor.execute("""
+            SELECT c.*,
+                   s.name as student_name,
+                   s.grade as student_grade
+            FROM courses c
+            LEFT JOIN students s ON c.student_id = s.id
+            WHERE c.id = %s
+        """, (course_id,))
+        row = cursor.fetchone()
+        return Course(**row)
 
 
 def update_course(course_id: str, course_in: CourseUpdate) -> Optional[Course]:
-    """更新课程"""
-    with get_db_session() as db:
-        db_course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
-        if not db_course:
-            return None
-        
+    """
+    更新课程
+    如果修改 student_id，数据库外键约束会自动验证
+    """
+    with get_db_cursor() as cursor:
         update_data = course_in.dict(exclude_unset=True)
-        
-        # 如果更新学生，验证是否存在
+        if not update_data:
+            return get_course(course_id)
+
+        # 如果要修改学生，先验证
         if 'student_id' in update_data:
-            student = db.query(StudentModel).filter(StudentModel.id == update_data['student_id']).first()
+            student = get_student(update_data['student_id'])
             if not student:
                 raise ValueError(f"Student with id {update_data['student_id']} not found")
-        
-        for key, value in update_data.items():
-            setattr(db_course, key, value)
-            
-        db.commit()
-        db.refresh(db_course)
-        
-        # 重新获取完整信息（包括可能更新的学生）
-        return get_course(course_id)
+
+        set_clause = ", ".join(f"{k} = %s" for k in update_data.keys())
+        values = list(update_data.values()) + [course_id]
+
+        cursor.execute(
+            f"UPDATE courses SET {set_clause} WHERE id = %s",
+            values
+        )
+
+        if cursor.rowcount > 0:
+            return get_course(course_id)
+        return None
 
 
 def delete_course(course_id: str) -> bool:
     """删除课程"""
-    with get_db_session() as db:
-        db_course = db.query(CourseModel).filter(CourseModel.id == course_id).first()
-        if not db_course:
-            return False
-            
-        db.delete(db_course)
-        db.commit()
-        return True
+    with get_db_cursor() as cursor:
+        cursor.execute("DELETE FROM courses WHERE id = %s", (course_id,))
+        return cursor.rowcount > 0
 
 
 def check_conflicts(start: datetime, end: datetime, exclude_id: str = None) -> List[Course]:
     """
-    检测时间冲突 (下沉到数据库查询)
-    Conflict condition: (NewStart < ExistingEnd) AND (NewEnd > ExistingStart)
+    检测时间冲突
+    使用数据库原生的时间比较，比 Python 循环更高效
     """
-    with get_db_session() as db:
-        query = db.query(CourseModel).filter(
-            CourseModel.start < end,
-            CourseModel.end > start
-        )
-        
+    with get_db_cursor() as cursor:
         if exclude_id:
-            query = query.filter(CourseModel.id != exclude_id)
-            
-        conflicts = query.order_by(CourseModel.start).all()
-        
-        # 转换为 Pydantic 模型
-        result = []
-        for c in conflicts:
-            c_dict = c.__dict__.copy()
-            # 简单填充，冲突检测可能不需要完整的学生详情，但保持一致性
-            if c.student:
-                c_dict['student_name'] = c.student.name
-                c_dict['student_grade'] = c.student.grade
-            else:
-                c_dict['student_name'] = "未知"
-                c_dict['student_grade'] = ""
-            result.append(Course(**c_dict))
-            
-        return result
+            cursor.execute("""
+                SELECT c.*,
+                       s.name as student_name,
+                       s.grade as student_grade
+                FROM courses c
+                LEFT JOIN students s ON c.student_id = s.id
+                WHERE c.id != %s
+                  AND c.start < %s
+                  AND c.end > %s
+                ORDER BY c.start
+            """, (exclude_id, end, start))
+        else:
+            cursor.execute("""
+                SELECT c.*,
+                       s.name as student_name,
+                       s.grade as student_grade
+                FROM courses c
+                LEFT JOIN students s ON c.student_id = s.id
+                WHERE c.start < %s
+                  AND c.end > %s
+                ORDER BY c.start
+            """, (end, start))
+
+        return [Course(**row) for row in cursor.fetchall()]
 
 
 # ==================== 财务统计 ====================
 
 def get_financial_report() -> Dict:
-    """财务收入统计"""
-    with get_db_session() as db:
-        # 总体统计
-        total_stats = db.query(
-            func.count(CourseModel.id).label('count'),
-            func.sum(CourseModel.price).label('income'),
-            func.avg(CourseModel.price).label('avg')
-        ).first()
-        
-        # 按学生统计
-        student_stats = db.query(
-            StudentModel.name,
-            StudentModel.id,
-            func.count(CourseModel.id).label('course_count'),
-            func.sum(CourseModel.price).label('total')
-        ).join(CourseModel, StudentModel.id == CourseModel.student_id)\
-         .group_by(StudentModel.id, StudentModel.name)\
-         .order_by(func.sum(CourseModel.price).desc()).all()
-        
+    """
+    财务收入统计
+    利用数据库聚合函数，高效计算
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_courses,
+                COALESCE(SUM(price), 0) as total_income,
+                COALESCE(AVG(price), 0) as avg_price
+            FROM courses
+        """)
+        stats = cursor.fetchone()
+
+        cursor.execute("""
+            SELECT s.name, s.id, COUNT(c.id) as course_count, SUM(c.price) as total
+            FROM students s
+            LEFT JOIN courses c ON s.id = c.student_id
+            GROUP BY s.id, s.name
+            ORDER BY total DESC
+        """)
+        by_student = cursor.fetchall()
+
         return {
-            "total_courses": total_stats.count or 0,
-            "total_income": float(total_stats.income or 0),
-            "avg_price": float(total_stats.avg or 0),
-            "by_student": [
-                {
-                    "name": s.name,
-                    "id": s.id,
-                    "course_count": s.course_count,
-                    "total": float(s.total or 0)
-                }
-                for s in student_stats
-            ]
+            "total_courses": stats['total_courses'],
+            "total_income": float(stats['total_income']),
+            "avg_price": float(stats['avg_price']),
+            "by_student": by_student
         }

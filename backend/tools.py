@@ -723,16 +723,8 @@ def add_recurring_course_tool(
         end = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
 
         # 解析时间
-        # 支持 HH:MM 或 HH:MM:SS
-        try:
-            time_start = datetime.strptime(start_time, "%H:%M").time()
-        except ValueError:
-            time_start = datetime.strptime(start_time, "%H:%M:%S").time()
-            
-        try:
-            time_end = datetime.strptime(end_time, "%H:%M").time()
-        except ValueError:
-            time_end = datetime.strptime(end_time, "%H:%M:%S").time()
+        time_start = datetime.fromisoformat(start_time).time()
+        time_end = datetime.fromisoformat(end_time).time()
 
         # 解析星期
         weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6,
