@@ -1,5 +1,40 @@
 document.addEventListener('DOMContentLoaded', function () {
+
+
     // --- Toast Notification System ---
+    
+    // --- Session Management ---
+    // Generate or retrieve session ID for AI context
+    let sessionId = localStorage.getItem('ai_session_id');
+    if (!sessionId) {
+        sessionId = 'sess-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('ai_session_id', sessionId);
+    }
+    
+    // --- Reset Session Logic ---
+    window.resetSession = function() {
+        if (!confirm('确定要开启新的对话吗？\n当前会话记录将被清除，但不会影响日历数据。')) return;
+        
+        // 1. Clear UI
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = '';
+        
+        // 2. Generate new Session ID
+        sessionId = 'sess-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('ai_session_id', sessionId);
+        
+        // 3. Add Welcome Message
+        appendMessage('已为您开启新的会话 (✿◠‿◠) \n请问有什么可以帮您？', 'ai-message');
+        
+        toastSuccess('会话已重置');
+        
+        // Close mobile sidebar if open
+        if (window.innerWidth < 1024) {
+            // Optional: keep open to see message, or close?
+            // closeSidebar(); 
+        }
+    };
+    
     window.showToast = function (options) {
         const container = document.getElementById('toastContainer');
         if (!container) return;
@@ -138,6 +173,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Determine initial view based on screen width
     var initialView = window.innerWidth < 768 ? 'timeGridDay' : 'timeGridWeek';
 
+    // Sync UI Buttons with Initial View
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-view') === initialView) {
+            btn.classList.add('active');
+        }
+    });
+
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: initialView,
         headerToolbar: false, // 隐藏默认工具栏
@@ -180,12 +223,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const eventMain = info.el.querySelector('.fc-event-main');
             if (eventMain) {
-                eventMain.style.borderLeftColor = colorInfo.primary;
-                eventMain.style.background = `linear-gradient(135deg, ${colorInfo.light} 0%, #FFFFFF 100%)`;
+                // Set CSS variables for theming
+                eventMain.style.setProperty('--student-primary', colorInfo.primary);
+                eventMain.style.setProperty('--student-light', colorInfo.light);
+                
+                // Clear inline styles that might conflict
+                eventMain.style.background = '';
+                eventMain.style.borderLeftColor = '';
 
                 const titleEl = info.el.querySelector('.fc-event-title');
                 if (titleEl) {
-                    titleEl.style.color = colorInfo.primary;
+                    titleEl.style.color = 'var(--student-primary)';
                 }
 
                 // 桌面端：添加额外的课程信息
@@ -429,7 +477,10 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const response = await fetch('/api/ai/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-Session-ID': sessionId
+                },
                 body: JSON.stringify({ message: text })
             });
 
@@ -488,7 +539,51 @@ document.addEventListener('DOMContentLoaded', function () {
                             } else {
                                 contentDiv.textContent = accumulatedText;
                             }
-                        } else if (data.type === 'tool') {
+                        } else if (data.type === 'thinking') {
+                            // Handle explicit thinking content from model
+                            const reasoning = data.content;
+                            
+                            // Ensure Thinking Process Container Exists
+                            let thinkingContainer = aiMessageDiv.querySelector('.thinking-process');
+                            if (!thinkingContainer) {
+                                thinkingContainer = document.createElement('div');
+                                thinkingContainer.className = 'thinking-process'; // Default collapsed
+                                thinkingContainer.innerHTML = `
+                                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
+                                        <span class="thinking-title">思考过程</span>
+                                        <svg class="thinking-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="6 9 12 15 18 9"></polyline>
+                                        </svg>
+                                    </div>
+                                    <div class="thinking-body">
+                                        <div class="timeline-line"></div>
+                                        <ul class="timeline-list"></ul>
+                                    </div>
+                                `;
+                                aiMessageDiv.insertBefore(thinkingContainer, aiMessageDiv.firstChild);
+                            }
+                            
+                            // Find or create the current thinking item
+                            const thinkingList = thinkingContainer.querySelector('.timeline-list');
+                            let currentThinkItem = thinkingList.querySelector('.thinking-text-item.active-thinking');
+                            
+                            if (!currentThinkItem) {
+                                currentThinkItem = document.createElement('li');
+                                currentThinkItem.className = 'thinking-text-item active-thinking';
+                                thinkingList.appendChild(currentThinkItem);
+                            }
+                            
+                            // Append content
+                            currentThinkItem.dataset.content = (currentThinkItem.dataset.content || '') + reasoning;
+                            
+                            // Render markdown or text
+                            if (typeof marked !== 'undefined') {
+                                currentThinkItem.innerHTML = marked.parse(currentThinkItem.dataset.content);
+                            } else {
+                                currentThinkItem.textContent = currentThinkItem.dataset.content;
+                            }
+                            
+                        } else if (data.type === 'tool_start') {
                             const toolName = data.name;
                             const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -511,12 +606,12 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (toolName.includes("计算") || toolName.includes("统计") || toolName.includes("生成") || toolName.includes("分析")) iconPath = TOOL_ICONS.calc;
                             if (toolName.includes("检查")) iconPath = TOOL_ICONS.check;
 
-                            // Ensure Thinking Process Container Exists
-                            let thinkingContainer = aiMessageDiv.querySelector('.thinking-process');
-                            if (!thinkingContainer) {
-                                thinkingContainer = document.createElement('div');
-                                thinkingContainer.className = 'thinking-process'; // Default collapsed
-                                thinkingContainer.innerHTML = `
+                            // Ensure Thinking Process Container Exists (Copied logic to ensure container exists for tools too)
+                            let toolThinkingContainer = aiMessageDiv.querySelector('.thinking-process');
+                            if (!toolThinkingContainer) {
+                                toolThinkingContainer = document.createElement('div');
+                                toolThinkingContainer.className = 'thinking-process'; // Default collapsed
+                                toolThinkingContainer.innerHTML = `
                                     <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
                                         <span class="thinking-title">思考过程</span>
                                         <svg class="thinking-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -528,11 +623,31 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <ul class="timeline-list"></ul>
                                     </div>
                                 `;
-                                aiMessageDiv.insertBefore(thinkingContainer, aiMessageDiv.firstChild);
+                                aiMessageDiv.insertBefore(toolThinkingContainer, aiMessageDiv.firstChild);
+                            }
+                            
+                            // Close any active thinking item when tool starts
+                            const toolList = toolThinkingContainer.querySelector('.timeline-list');
+                            const activeThink = toolList.querySelector('.thinking-text-item.active-thinking');
+                            if (activeThink) activeThink.classList.remove('active-thinking');
+
+                            // === NEW: Move accumulated text to Thinking Process as a thought step ===
+                            if (accumulatedText.trim()) {
+                                const textItem = document.createElement('li');
+                                textItem.className = 'thinking-text-item';
+                                if (typeof marked !== 'undefined') {
+                                    textItem.innerHTML = marked.parse(accumulatedText);
+                                } else {
+                                    textItem.textContent = accumulatedText;
+                                }
+                                toolList.appendChild(textItem);
+                                
+                                // Reset buffers
+                                accumulatedText = '';
+                                contentDiv.innerHTML = '';
                             }
 
                             // Create Timeline Item
-                            const list = thinkingContainer.querySelector('.timeline-list');
                             const item = document.createElement('li');
                             item.className = 'timeline-item processing';
                             item.id = toolId;
@@ -546,7 +661,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <span class="tool-name">${toolName}</span>
                                 </div>
                             `;
-                            list.appendChild(item);
+                            toolList.appendChild(item);
                             toolElements[toolName] = toolId;
 
                         } else if (data.type === 'tool_end') {

@@ -695,25 +695,27 @@ def add_recurring_course_tool(
     start_time: str,
     end_time: str,
     price: float,
+    grade: str = "",  # 新增：年级，用于自动创建学生
     description: str = "",
     location: Optional[str] = None,
     color: str = "#F5A3C8"
 ) -> str:
     """
-    批量添加周期性课程（一次性创建多节重复课程）。
+    【推荐】批量添加周期性课程（一次性创建多节重复课程）。
+    当需要安排"每周固定时间"或"一段时间内多次课程"时，必须优先使用此工具，这比单次添加更高效且稳健。
+
+    **功能增强**：如果学生不存在，会自动创建学生档案！
 
     参数说明:
-    - start_date: 开始日期，格式 "YYYY-MM-DD"，如 "2026-03-01"
-    - end_date: 结束日期，格式 "YYYY-MM-DD"，如 "2026-06-30"
-    - weekdays: 星期几，多个用逗号分隔。支持: "周一,周二,周三,周四,周五,周六,周日" 或数字 "0,1,2,3,4,5,6" (0=周一)
-    - start_time: 每天开始时间，格式 "HH:MM"，如 "14:00"
-    - end_time: 每天结束时间，格式 "HH:MM"，如 "16:00"
-
-    示例:
-    - "3月1日到6月30日每周二14:00-16:00给张三上钢琴课"
-      → start_date="2026-03-01", end_date="2026-06-30", weekdays="周二", start_time="14:00", end_time="16:00"
-    - "周一和周三的上午10点到11点"
-      → weekdays="周一,周三" 或 weekdays="0,2"
+    - title: 课程标题，如 "数学课"
+    - student_name: 学生姓名
+    - start_date: 开始日期，格式 "YYYY-MM-DD"，如 "2026-02-01"
+    - end_date: 结束日期，格式 "YYYY-MM-DD"，如 "2026-05-01"
+    - weekdays: 星期几，多个用逗号分隔。如: "周一,周三" 或 "1,3,5"
+    - start_time: 上课时间，格式 "HH:MM"，如 "15:00"
+    - end_time: 下课时间，格式 "HH:MM"，如 "17:00"
+    - price: 每节课费用
+    - grade: 学生年级（可选，如果学生不存在会用于创建档案）
     """
     try:
         # 解析日期
@@ -721,8 +723,16 @@ def add_recurring_course_tool(
         end = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
 
         # 解析时间
-        time_start = datetime.fromisoformat(start_time).time()
-        time_end = datetime.fromisoformat(end_time).time()
+        # 支持 HH:MM 或 HH:MM:SS
+        try:
+            time_start = datetime.strptime(start_time, "%H:%M").time()
+        except ValueError:
+            time_start = datetime.strptime(start_time, "%H:%M:%S").time()
+            
+        try:
+            time_end = datetime.strptime(end_time, "%H:%M").time()
+        except ValueError:
+            time_end = datetime.strptime(end_time, "%H:%M:%S").time()
 
         # 解析星期
         weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6,
@@ -738,10 +748,17 @@ def add_recurring_course_tool(
         if not target_weekdays:
             return f"⚠️ 星期格式错误，请使用：周一/周二/... 或 0/1/.../6"
 
-        # 查找学生
+        # 查找或创建学生
         student = get_student_by_name(student_name)
+        auto_created = False
         if not student:
-            return f"⚠️ 找不到学生 '{student_name}'，请先创建学生档案"
+            # 自动创建学生档案
+            student_in = StudentCreate(
+                name=student_name,
+                grade=grade if grade else None
+            )
+            student = service_create_student(student_in)
+            auto_created = True
 
         # 生成所有课程日期
         current = start
@@ -787,14 +804,32 @@ def add_recurring_course_tool(
         # 返回结果
         result = f"🎀 周期性课程创建完成！\n"
         result += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+
+        if auto_created:
+            result += f"✨ 已自动创建学生档案: {student_name}\n"
+
         result += f"📚 课程: {title}\n"
-        result += f"👤 学生: {student_name}\n"
+        result += f"👤 学生: {student_name}"
+        if student.grade:
+            result += f" ({student.grade})"
+        result += f"\n"
         result += f"📅 时间范围: {start_date} ~ {end_date}\n"
         result += f"📆 每周: {weekdays}\n"
         result += f"⏰ 时段: {start_time}-{end_time}\n\n"
 
         if created_courses:
             result += f"✅ 成功创建: {len(created_courses)} 节课\n"
+            # 按月份分组显示
+            by_month = {}
+            for c in created_courses:
+                month_key = c.start.strftime('%Y-%m')
+                if month_key not in by_month:
+                    by_month[month_key] = []
+                by_month[month_key].append(c)
+
+            for month in sorted(by_month.keys()):
+                result += f"   {month}: {len(by_month[month])} 节\n"
+
             result += f"💰 预计收入: ¥{sum(c.price for c in created_courses):.0f}\n"
 
         if conflicts:
