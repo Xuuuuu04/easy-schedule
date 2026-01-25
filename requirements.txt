@@ -8,3 +8,5 @@ langchain
 langchain_openai
 pymysql
 cryptography
+sqlalchemy
+pydantic-settings
