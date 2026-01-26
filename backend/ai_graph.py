@@ -291,15 +291,21 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
     async for event in graph.astream_events(inputs, config=config, version="v2"):
         kind = event["event"]
 
-        # We are looking for chat model streaming tokens coming from the 'agent' node
-        if kind == "on_chat_model_stream":
-            chunk = event["data"]["chunk"]
-            content = chunk.content
+        # We are looking for streaming tokens coming from the model node.
+        # Different LangChain/LangGraph versions may emit different event names.
+        if kind in ("on_chat_model_stream", "on_llm_stream"):
+            chunk = event.get("data", {}).get("chunk")
+            content = None
+            reasoning = None
+
+            if isinstance(chunk, str):
+                content = chunk
+            elif chunk is not None and hasattr(chunk, "content"):
+                content = chunk.content
             
             # Check for SiliconFlow/DeepSeek style reasoning content
             # Usually in additional_kwargs.reasoning_content or similar fields
-            reasoning = None
-            if hasattr(chunk, "additional_kwargs"):
+            if chunk is not None and hasattr(chunk, "additional_kwargs"):
                 reasoning = chunk.additional_kwargs.get("reasoning_content")
                 if not reasoning:
                     delta = chunk.additional_kwargs.get("delta")
@@ -324,6 +330,11 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
             # Emit standard content if present
             if content:
                 yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
+
+        elif kind == "on_llm_new_token":
+            token = event.get("data", {}).get("token")
+            if token:
+                yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
 
         # Capture when a tool starts to notify the user
         elif kind == "on_tool_start":
