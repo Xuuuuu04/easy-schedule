@@ -3,6 +3,12 @@ from typing import Optional
 from datetime import datetime
 import uuid
 
+# ==================== Chat Models ====================
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., description="User message")
+    thread_id: Optional[str] = Field("default", description="Session ID for conversation history")
+
 # ==================== Student Models ====================
 
 class StudentBase(BaseModel):

@@ -136,17 +136,19 @@ document.addEventListener('DOMContentLoaded', function () {
     var calendarEl = document.getElementById('calendar');
 
     // Determine initial view based on screen width
-    var initialView = window.innerWidth < 768 ? 'timeGridDay' : 'timeGridWeek';
+    var initialView = window.innerWidth < 768 ? 'timeGridDay' : 'dayGridMonth';
 
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: initialView,
         headerToolbar: false, // 隐藏默认工具栏
         locale: 'zh-cn',
-        windowResize: function (view) {
-            if (window.innerWidth < 768) {
+        windowResize: function () {
+            const isMobile = window.innerWidth < 768;
+            const currentView = calendar.view.type;
+            if (isMobile && currentView === 'dayGridMonth') {
                 calendar.changeView('timeGridDay');
-            } else {
-                calendar.changeView('timeGridWeek');
+            } else if (!isMobile && currentView === 'timeGridDay') {
+                calendar.changeView('dayGridMonth');
             }
         },
         allDaySlot: false,
@@ -165,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // --- Update custom title when dates change ---
         datesSet: function (info) {
             updateCalendarTitle(info.view.currentStart, info.view.type);
+            syncCalendarViewButtons(info.view.type);
         },
 
         // --- Conflict Visualization & Student Color ---
@@ -331,6 +334,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // View buttons
     const viewButtons = document.querySelectorAll('.view-btn');
+    function syncCalendarViewButtons(viewType) {
+        viewButtons.forEach(function (b) { b.classList.remove('active'); });
+        const matched = document.querySelector(`.view-btn[data-view="${viewType}"]`);
+        if (matched) matched.classList.add('active');
+    }
     viewButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             const view = this.getAttribute('data-view');
@@ -346,6 +354,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Initial title update
     updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
+    syncCalendarViewButtons(calendar.view.type);
 
     // --- Sidebar Toggle ---
     window.toggleSidebar = function () {
@@ -380,6 +389,21 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- Chat Logic ---
     const chatInput = document.getElementById('chat-input');
     const messagesContainer = document.getElementById('messages');
+    let currentThreadId = 'thread-' + Date.now();
+
+    window.startNewChat = function () {
+        if (confirm('确定要开始新对话吗？当前对话记录将会清除。')) {
+            currentThreadId = 'thread-' + Date.now();
+            messagesContainer.innerHTML = `
+                <div class="message ai-message">
+                    <div class="message-content">
+                        你好！我是你的课程助理，请问今天有什么安排？
+                    </div>
+                </div>
+            `;
+            toastInfo('已开始新会话');
+        }
+    };
 
     window.adjustTextareaHeight = function (el) {
         el.style.height = 'auto';
@@ -424,13 +448,23 @@ document.addEventListener('DOMContentLoaded', function () {
         // Remove typing indicator on first chunk
         let isFirstChunk = true;
         let accumulatedText = '';
-        let toolElements = {}; // Track tool elements by name for completion updates
+        let activeTools = [];
+        let toolIconPaths = {};
+        const TOOL_ICONS = {
+            default: "M10 2c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14.5c-3.59 0-6.5-2.91-6.5-6.5S6.41 3.5 10 3.5s6.5 2.91 6.5 6.5-2.91 6.5-6.5 6.5zm.5-10.5h-1v5l4.25 2.5.75-1.23-3.5-2.08V6z",
+            search: "M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.35zM8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12z",
+            write: "M13.5 3c.28 0 .5.22.5.5v13a.5.5 0 0 1-1 0v-13c0-.28.22-.5.5-.5zM6 6.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5z",
+            add: "M10 4a1 1 0 0 1 1 1v4h4a1 1 0 1 1 0 2h-4v4a1 1 0 1 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1z",
+            delete: "M15 4V3H5v1H3v2h14V4h-2zm1 4H4v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8zM6 16v-6h1.5v6H6zm3.5 0v-6H11v6H9.5zm3.5 0v-6h1.5v6H13z",
+            calc: "M4 3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4zm0 2h12v3H4V5zm0 5h3v2H4v-2zm5 0h3v2H9v-2zm5 0h2v2h-2v-2zm-5 4h3v2H9v-2zm-5 0h3v2H4v-2zm10 0h2v2h-2v-2z",
+            check: "M7.25 12.25L9.5 14.5 15.5 8.5"
+        };
 
         try {
             const response = await fetch('/api/ai/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: text })
+                body: JSON.stringify({ message: text, thread_id: currentThreadId })
             });
 
             if (!response.ok) {
@@ -475,33 +509,42 @@ document.addEventListener('DOMContentLoaded', function () {
                     try {
                         const data = JSON.parse(line);
 
-                        if (isFirstChunk) {
-                            contentDiv.innerHTML = ''; // Clear typing indicator
+                        if (isFirstChunk && data.type !== 'token') {
+                            contentDiv.innerHTML = '';
+                            const mdBody = document.createElement('div');
+                            mdBody.className = 'markdown-body';
+                            contentDiv.appendChild(mdBody);
                             isFirstChunk = false;
                         }
 
                         if (data.type === 'token') {
                             accumulatedText += data.content;
+                            
+                            if (isFirstChunk) {
+                                contentDiv.innerHTML = ''; // Clear typing indicator
+                                const mdBody = document.createElement('div');
+                                mdBody.className = 'markdown-body';
+                                contentDiv.appendChild(mdBody);
+                                isFirstChunk = false;
+                            }
+
+                            // Find or create markdown body
+                            let mdBody = contentDiv.querySelector('.markdown-body');
+                            if (!mdBody) {
+                                mdBody = document.createElement('div');
+                                mdBody.className = 'markdown-body';
+                                contentDiv.appendChild(mdBody);
+                            }
+
                             // Update markdown content
                             if (typeof marked !== 'undefined') {
-                                contentDiv.innerHTML = marked.parse(accumulatedText);
+                                mdBody.innerHTML = marked.parse(accumulatedText);
                             } else {
-                                contentDiv.textContent = accumulatedText;
+                                mdBody.textContent = accumulatedText;
                             }
-                        } else if (data.type === 'tool') {
-                            const toolName = data.name;
-                            const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-                            // === Premium Exquisite SVGs (20x20 viewbox optimized) ===
-                            const TOOL_ICONS = {
-                                default: "M10 2c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14.5c-3.59 0-6.5-2.91-6.5-6.5S6.41 3.5 10 3.5s6.5 2.91 6.5 6.5-2.91 6.5-6.5 6.5zm.5-10.5h-1v5l4.25 2.5.75-1.23-3.5-2.08V6z",
-                                search: "M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.35zM8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12z",
-                                write: "M13.5 3c.28 0 .5.22.5.5v13a.5.5 0 0 1-1 0v-13c0-.28.22-.5.5-.5zM6 6.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 4a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5z",
-                                add: "M10 4a1 1 0 0 1 1 1v4h4a1 1 0 1 1 0 2h-4v4a1 1 0 1 1-2 0v-4H5a1 1 0 1 1 0-2h4V5a1 1 0 0 1 1-1z",
-                                delete: "M15 4V3H5v1H3v2h14V4h-2zm1 4H4v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8zM6 16v-6h1.5v6H6zm3.5 0v-6H11v6H9.5zm3.5 0v-6h1.5v6H13z",
-                                calc: "M4 3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4zm0 2h12v3H4V5zm0 5h3v2H4v-2zm5 0h3v2H9v-2zm5 0h2v2h-2v-2zm-5 4h3v2H9v-2zm-5 0h3v2H4v-2zm10 0h2v2h-2v-2z",
-                                check: "M7.25 12.25L9.5 14.5 15.5 8.5"
-                            };
+                        } else if (data.type === 'tool_start' || data.type === 'tool') {
+                            const toolName = data.name;
 
                             // Determine icon based on keywords
                             let iconPath = TOOL_ICONS.default;
@@ -510,62 +553,49 @@ document.addEventListener('DOMContentLoaded', function () {
                             if (toolName.includes("移除") || toolName.includes("删除")) iconPath = TOOL_ICONS.delete;
                             if (toolName.includes("计算") || toolName.includes("统计") || toolName.includes("生成") || toolName.includes("分析")) iconPath = TOOL_ICONS.calc;
                             if (toolName.includes("检查")) iconPath = TOOL_ICONS.check;
+                            toolIconPaths[toolName] = iconPath;
+                            activeTools.push(toolName);
 
-                            // Ensure Thinking Process Container Exists
-                            let thinkingContainer = aiMessageDiv.querySelector('.thinking-process');
-                            if (!thinkingContainer) {
-                                thinkingContainer = document.createElement('div');
-                                thinkingContainer.className = 'thinking-process'; // Default collapsed
-                                thinkingContainer.innerHTML = `
-                                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('expanded')">
-                                        <span class="thinking-title">思考过程</span>
-                                        <svg class="thinking-arrow" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                                            <polyline points="6 9 12 15 18 9"></polyline>
-                                        </svg>
-                                    </div>
-                                    <div class="thinking-body">
-                                        <div class="timeline-line"></div>
-                                        <ul class="timeline-list"></ul>
-                                    </div>
-                                `;
-                                aiMessageDiv.insertBefore(thinkingContainer, aiMessageDiv.firstChild);
+                            // --- 1. Tool Hat Logic (Hello Kitty Style) ---
+                            let toolHat = contentDiv.querySelector('.tool-hat');
+                            if (!toolHat) {
+                                toolHat = document.createElement('div');
+                                toolHat.className = 'tool-hat';
+                                // Prepend to contentDiv so it sits at the top
+                                contentDiv.insertBefore(toolHat, contentDiv.firstChild);
                             }
-
-                            // Create Timeline Item
-                            const list = thinkingContainer.querySelector('.timeline-list');
-                            const item = document.createElement('li');
-                            item.className = 'timeline-item processing';
-                            item.id = toolId;
-                            item.innerHTML = `
-                                <div class="timeline-dot">
+                            
+                            toolHat.innerHTML = `
+                                <div class="tool-hat-icon">
                                     <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
                                         <path d="${iconPath}"></path>
                                     </svg>
                                 </div>
-                                <div class="timeline-content">
-                                    <span class="tool-name">${toolName}</span>
-                                </div>
+                                <div class="tool-hat-text">正在使用 ${toolName}...</div>
                             `;
-                            list.appendChild(item);
-                            toolElements[toolName] = toolId;
 
                         } else if (data.type === 'tool_end') {
-                            // Mark tool as complete
-                            const toolId = toolElements[data.name];
-                            if (toolId) {
-                                const toolNode = document.getElementById(toolId);
-                                if (toolNode) {
-                                    toolNode.classList.remove('processing');
-                                    toolNode.classList.add('completed');
-
-                                    // In-place Update: Change Icon to Checkmark
-                                    const dot = toolNode.querySelector('.timeline-dot svg');
-                                    if (dot) {
-                                        // "Exquisite" checkmark path
-                                        dot.innerHTML = '<path d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 1.4-1.4L8 12.58l7.3-7.29a1 1 0 0 1 1.4 0z"></path>';
-                                    }
+                            const toolName = data.name;
+                            const idx = activeTools.indexOf(toolName);
+                            if (idx !== -1) activeTools.splice(idx, 1);
+                            
+                            // Smart Hat Management
+                            const toolHat = contentDiv.querySelector('.tool-hat');
+                            if (toolHat) {
+                                if (activeTools.length > 0) {
+                                    const nextName = activeTools[0];
+                                    const textEl = toolHat.querySelector('.tool-hat-text');
+                                    if (textEl) textEl.textContent = `正在使用 ${nextName}...`;
+                                    const pathEl = toolHat.querySelector('.tool-hat-icon path');
+                                    if (pathEl) pathEl.setAttribute('d', toolIconPaths[nextName] || TOOL_ICONS.default);
+                                } else {
+                                    toolHat.classList.add('hiding');
+                                    toolHat.addEventListener('animationend', () => {
+                                        if (toolHat.parentElement) {
+                                            toolHat.remove();
+                                        }
+                                    });
                                 }
-                                delete toolElements[data.name];
                             }
                         }
 

@@ -16,6 +16,10 @@ from .service import (
     create_student as service_create_student,
     update_student as service_update_student,
     delete_student as service_delete_student,
+    query_courses_filtered,
+    bulk_update_courses_filtered,
+    bulk_delete_courses_filtered,
+    bulk_create_recurring_courses,
     CourseCreate,
     CourseUpdate,
     StudentCreate,
@@ -718,116 +722,51 @@ def add_recurring_course_tool(
     - grade: 学生年级（可选，如果学生不存在会用于创建档案）
     """
     try:
-        # 解析日期
-        start = datetime.fromisoformat(start_date)
-        end = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
+        stats = bulk_create_recurring_courses(
+            title=title,
+            student_name=student_name,
+            start_date=start_date,
+            end_date=end_date,
+            weekdays=weekdays,
+            start_time=start_time,
+            end_time=end_time,
+            price=price,
+            grade=grade,
+            description=description,
+            location=location,
+            color=color,
+        )
 
-        # 解析时间
-        time_start = datetime.fromisoformat(start_time).time()
-        time_end = datetime.fromisoformat(end_time).time()
-
-        # 解析星期
-        weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6,
-                       "0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6,
-                       "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
-
-        target_weekdays = set()
-        for w in weekdays.split(","):
-            w = w.strip().lower()
-            if w in weekday_map:
-                target_weekdays.add(weekday_map[w])
-
-        if not target_weekdays:
-            return f"⚠️ 星期格式错误，请使用：周一/周二/... 或 0/1/.../6"
-
-        # 查找或创建学生
-        student = get_student_by_name(student_name)
-        auto_created = False
-        if not student:
-            # 自动创建学生档案
-            student_in = StudentCreate(
-                name=student_name,
-                grade=grade if grade else None
-            )
-            student = service_create_student(student_in)
-            auto_created = True
-
-        # 生成所有课程日期
-        current = start
-        course_dates = []
-
-        while current <= end:
-            if current.weekday() in target_weekdays:
-                course_dates.append(current.date())
-            current += timedelta(days=1)
-
-        if not course_dates:
-            return f"⚠️ 在 {start_date} 到 {end_date} 之间没有找到指定的星期"
-
-        # 检查冲突并创建课程
-        created_courses = []
-        conflicts = []
-
-        for course_date in course_dates:
-            course_start = datetime.combine(course_date, time_start)
-            course_end = datetime.combine(course_date, time_end)
-
-            # 检查冲突
-            existing_conflicts = check_conflicts(course_start, course_end)
-            if existing_conflicts:
-                conflict_info = f"{course_date.strftime('%Y-%m-%d')} {time_start.strftime('%H:%M')}"
-                conflicts.append(conflict_info)
-                continue
-
-            # 创建课程
-            course_in = CourseCreate(
-                title=title,
-                start=course_start,
-                end=course_end,
-                student_id=student.id,
-                price=price,
-                description=description,
-                location=location,
-                color=color
-            )
-            new_course = create_course(course_in)
-            created_courses.append(new_course)
-
-        # 返回结果
         result = f"🎀 周期性课程创建完成！\n"
         result += f"━━━━━━━━━━━━━━━━━━━━━━\n"
-
-        if auto_created:
+        if stats.get("auto_created"):
             result += f"✨ 已自动创建学生档案: {student_name}\n"
 
         result += f"📚 课程: {title}\n"
         result += f"👤 学生: {student_name}"
-        if student.grade:
-            result += f" ({student.grade})"
-        result += f"\n"
+        if stats.get("student_grade"):
+            result += f" ({stats.get('student_grade')})"
+        result += "\n"
         result += f"📅 时间范围: {start_date} ~ {end_date}\n"
         result += f"📆 每周: {weekdays}\n"
         result += f"⏰ 时段: {start_time}-{end_time}\n\n"
 
-        if created_courses:
-            result += f"✅ 成功创建: {len(created_courses)} 节课\n"
-            # 按月份分组显示
-            by_month = {}
-            for c in created_courses:
-                month_key = c.start.strftime('%Y-%m')
-                if month_key not in by_month:
-                    by_month[month_key] = []
-                by_month[month_key].append(c)
+        created = int(stats.get("created") or 0)
+        conflicts = stats.get("conflicts") or []
+        months = stats.get("months") or {}
 
-            for month in sorted(by_month.keys()):
-                result += f"   {month}: {len(by_month[month])} 节\n"
-
-            result += f"💰 预计收入: ¥{sum(c.price for c in created_courses):.0f}\n"
+        if created > 0:
+            result += f"✅ 成功创建: {created} 节课\n"
+            for month in sorted(months.keys()):
+                result += f"   {month}: {months[month]} 节\n"
+            result += f"💰 预计收入: ¥{float(stats.get('expected_income') or 0):.0f}\n"
+        else:
+            result += f"⚠️ 未创建任何课程（可能全部冲突或日期范围内无匹配星期）\n"
 
         if conflicts:
-            result += f"\n⚠️ 跳过冲突时段: {len(conflicts)} 个\n"
-            for c in conflicts[:5]:
-                result += f"   • {c}\n"
+            result += f"\n⚠️ 跳过冲突日期: {len(conflicts)} 个\n"
+            for d in conflicts[:5]:
+                result += f"   • {d} {start_time}\n"
             if len(conflicts) > 5:
                 result += f"   ... 还有 {len(conflicts) - 5} 个\n"
 
@@ -868,88 +807,27 @@ def batch_modify_courses_tool(
       → student_name="张三", date_range="2026-03-01,2026-03-31", new_price=200
     """
     try:
-        all_courses = get_all_courses()
-        filtered = []
+        stats = bulk_update_courses_filtered(
+            title_pattern=title_pattern,
+            student_name=student_name,
+            date_range=date_range,
+            weekday=weekday,
+            new_time=new_time,
+            new_price=new_price,
+            new_location=new_location,
+        )
 
-        # 筛选条件
-        for c in all_courses:
-            # 课程名称筛选
-            if title_pattern and title_pattern not in c.title:
-                continue
-
-            # 学生筛选
-            if student_name:
-                student = get_student(c.student_id)
-                if not student or student.name != student_name:
-                    continue
-
-            # 日期范围筛选
-            if date_range:
-                try:
-                    start_str, end_str = date_range.split(",")
-                    start_date = datetime.fromisoformat(start_str).date()
-                    end_date = datetime.fromisoformat(end_str).date()
-                    if not (start_date <= c.start.date() <= end_date):
-                        continue
-                except:
-                    return f"⚠️ 日期范围格式错误，请使用: YYYY-MM-DD,YYYY-MM-DD"
-
-            # 星期筛选
-            if weekday:
-                weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
-                target_wd = weekday_map.get(weekday)
-                if target_wd is not None and c.start.weekday() != target_wd:
-                    continue
-
-            filtered.append(c)
-
-        if not filtered:
+        matched = int(stats.get("matched") or 0)
+        updated = int(stats.get("updated") or 0)
+        if matched == 0:
             return f"⚠️ 没有找到符合条件的课程"
-
-        # 执行批量修改
-        updated_count = 0
-        failed_count = 0
-
-        for c in filtered:
-            update_data = {}
-
-            if new_time:
-                try:
-                    start_str, end_str = new_time.split(",")
-                    # 保持原日期，更新时间
-                    new_start = c.start.replace(
-                        hour=int(start_str.split(":")[0]),
-                        minute=int(start_str.split(":")[1])
-                    )
-                    new_end = c.end.replace(
-                        hour=int(end_str.split(":")[0]),
-                        minute=int(end_str.split(":")[1])
-                    )
-                    update_data['start'] = new_start
-                    update_data['end'] = new_end
-                except:
-                    failed_count += 1
-                    continue
-
-            if new_price is not None:
-                update_data['price'] = new_price
-
-            if new_location is not None:
-                update_data['location'] = new_location
-
-            if update_data:
-                course_in = CourseUpdate(**update_data)
-                if update_course(c.id, course_in):
-                    updated_count += 1
-                else:
-                    failed_count += 1
 
         result = f"🔄 批量修改完成\n"
         result += f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        result += f"✅ 成功修改: {updated_count} 节课\n"
-        if failed_count > 0:
-            result += f"⚠️ 修改失败: {failed_count} 节课\n"
-
+        result += f"📋 匹配到: {matched} 节课\n"
+        result += f"✅ 实际更新: {updated} 节课\n"
+        if updated < matched:
+            result += f"💡 提示：部分课程可能新值与旧值相同，因此数据库未计为“更新”。\n"
         return result
 
     except Exception as e:
@@ -979,50 +857,22 @@ def batch_remove_courses_tool(
       → title_pattern="钢琴课", weekday="周六"
     """
     try:
-        all_courses = get_all_courses()
-        to_remove = []
+        stats = bulk_delete_courses_filtered(
+            title_pattern=title_pattern,
+            student_name=student_name,
+            date_range=date_range,
+            weekday=weekday,
+        )
 
-        # 筛选条件（与 batch_modify 相同逻辑）
-        for c in all_courses:
-            if title_pattern and title_pattern not in c.title:
-                continue
-
-            if student_name:
-                student = get_student(c.student_id)
-                if not student or student.name != student_name:
-                    continue
-
-            if date_range:
-                try:
-                    start_str, end_str = date_range.split(",")
-                    start_date = datetime.fromisoformat(start_str).date()
-                    end_date = datetime.fromisoformat(end_str).date()
-                    if not (start_date <= c.start.date() <= end_date):
-                        continue
-                except:
-                    return f"⚠️ 日期范围格式错误"
-
-            if weekday:
-                weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
-                target_wd = weekday_map.get(weekday)
-                if target_wd is not None and c.start.weekday() != target_wd:
-                    continue
-
-            to_remove.append(c)
-
-        if not to_remove:
+        matched = int(stats.get("matched") or 0)
+        deleted = int(stats.get("deleted") or 0)
+        if matched == 0:
             return f"⚠️ 没有找到符合条件的课程"
-
-        # 执行删除
-        removed_count = 0
-        for c in to_remove:
-            if delete_course(c.id):
-                removed_count += 1
 
         result = f"🗑️ 批量删除完成\n"
         result += f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        result += f"✅ 已删除: {removed_count} 节课\n"
-
+        result += f"📋 匹配到: {matched} 节课\n"
+        result += f"✅ 实际删除: {deleted} 节课\n"
         return result
 
     except Exception as e:
@@ -1052,49 +902,21 @@ def query_courses_tool(
     - "张三的钢琴课" → title_pattern="钢琴", student_name="张三"
     """
     try:
-        all_courses = get_all_courses()
-        filtered = []
-
-        # 筛选（与批量操作相同逻辑）
-        for c in all_courses:
-            if title_pattern and title_pattern not in c.title:
-                continue
-
-            if student_name:
-                student = get_student(c.student_id)
-                if not student or student.name != student_name:
-                    continue
-
-            if date_range:
-                try:
-                    start_str, end_str = date_range.split(",")
-                    start_date = datetime.fromisoformat(start_str).date()
-                    end_date = datetime.fromisoformat(end_str).date()
-                    if not (start_date <= c.start.date() <= end_date):
-                        continue
-                except:
-                    return f"⚠️ 日期范围格式错误"
-
-            if weekday:
-                weekday_map = {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6}
-                target_wd = weekday_map.get(weekday)
-                if target_wd is not None and c.start.weekday() != target_wd:
-                    continue
-
-            filtered.append(c)
+        filtered = query_courses_filtered(
+            title_pattern=title_pattern,
+            student_name=student_name,
+            date_range=date_range,
+            weekday=weekday,
+        )
 
         if not filtered:
             return f"📋 没有找到符合条件的课程"
-
-        # 按时间排序
-        filtered.sort(key=lambda c: c.start)
 
         result = f"📋 查询结果 ({len(filtered)}节课)\n"
         result += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
         for c in filtered:
-            student = get_student(c.student_id)
-            s_name = student.name if student else "未知"
+            s_name = c.student_name or "未知"
             wd = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][c.start.weekday()]
 
             result += f"📌 {c.title}\n"

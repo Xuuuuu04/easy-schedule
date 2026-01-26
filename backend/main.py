@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
-from .models import Course, CourseCreate, CourseUpdate, Student, StudentCreate, StudentUpdate
+from .models import Course, CourseCreate, CourseUpdate, Student, StudentCreate, StudentUpdate, ChatRequest
 from . import service
 from . import ai_service
 
@@ -75,9 +75,9 @@ def delete_student(student_id: int):
 # ==================== AI Chat Endpoint ====================
 
 @app.post("/api/ai/chat")
-async def chat_with_ai(message: str = Body(..., embed=True)):
+async def chat_with_ai(request: ChatRequest):
     return StreamingResponse(
-        ai_service.process_chat_stream(message),
+        ai_service.process_chat_stream(request.message, request.thread_id),
         media_type="application/json"
     )
 

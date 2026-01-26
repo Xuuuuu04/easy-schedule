@@ -43,10 +43,10 @@ async def test_agent():
                 # Parse JSON response
                 if chunk.startswith("{"):
                     data = json.loads(chunk)
-                    if data.get("type") == "tool":
+                    if data.get("type") in ("tool_start", "tool_end"):
                         tool_name = data.get("name")
-                        tool_calls.append(tool_name)
-                        print(f"  [TOOL] {tool_name}")
+                        tool_calls.append(f'{data.get("type")}:{tool_name}')
+                        print(f'  [{data.get("type").upper()}] {tool_name}')
                     elif data.get("type") == "token":
                         token_count += 1
             except:
