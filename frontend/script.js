@@ -82,6 +82,95 @@ document.addEventListener('DOMContentLoaded', function () {
         marked.setOptions({ renderer, breaks: true });
     }
 
+    (function () {
+        const AUTH_STORAGE_KEY = 'teacher_auth_v1';
+        const AUTH_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+        const AUTH_PASSWORD = '0718';
+
+        const modal = document.getElementById('authModal');
+        const input = document.getElementById('authPassword');
+        const submitBtn = document.getElementById('authSubmitBtn');
+        const clearBtn = document.getElementById('authClearBtn');
+        const content = modal ? modal.querySelector('.auth-modal-content') : null;
+
+        const readAuth = () => {
+            try {
+                const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+                if (!raw) return null;
+                return JSON.parse(raw);
+            } catch (e) {
+                return null;
+            }
+        };
+
+        const isAuthed = () => {
+            const data = readAuth();
+            if (!data || !data.ok || !data.ts) return false;
+            return Date.now() - data.ts < AUTH_TTL_MS;
+        };
+
+        const lock = () => {
+            document.body.classList.add('auth-locked');
+            if (modal) modal.style.display = 'flex';
+            if (input) {
+                input.value = '';
+                setTimeout(() => input.focus(), 50);
+            }
+        };
+
+        const unlock = () => {
+            document.body.classList.remove('auth-locked');
+            if (modal) modal.style.display = 'none';
+        };
+
+        const shake = () => {
+            if (!content) return;
+            content.classList.remove('shake');
+            void content.offsetWidth;
+            content.classList.add('shake');
+        };
+
+        const submit = () => {
+            const v = (input ? input.value : '').trim();
+            if (v === AUTH_PASSWORD) {
+                localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ok: true, ts: Date.now() }));
+                unlock();
+                toastSuccess('已通过验证，欢迎回来', '你好呀');
+                return;
+            }
+            shake();
+            if (input) input.value = '';
+            toastError('密码不对，再试一次吧', '验证失败');
+            if (input) input.focus();
+        };
+
+        if (!modal || !input || !submitBtn || !clearBtn) return;
+
+        submitBtn.addEventListener('click', submit);
+        clearBtn.addEventListener('click', () => {
+            input.value = '';
+            input.focus();
+        });
+        input.addEventListener('input', () => {
+            input.value = input.value.replace(/\D/g, '').slice(0, 4);
+            if (input.value.length === 4) {
+                submit();
+            }
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+            }
+        });
+
+        if (isAuthed()) {
+            unlock();
+        } else {
+            lock();
+        }
+    })();
+
     // --- Student Color Management ---
     // 为每个学生分配固定的颜色，便于识别
     var studentColors = JSON.parse(localStorage.getItem('studentColors') || '{}');

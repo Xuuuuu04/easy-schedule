@@ -14,7 +14,7 @@
     <!-- Marked.js for Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=20260126_4">
+    <link rel="stylesheet" href="style.css?v=20260126_5">
 </head>
 
 <body>
@@ -215,6 +215,23 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <div id="authModal" class="modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <div class="modal-content auth-modal-content">
+            <div class="modal-header auth-header">
+                <h2 id="authTitle">婷婷老师，欢迎回来</h2>
+            </div>
+            <div class="modal-body auth-body">
+                <div class="auth-subtitle">请输入进入密码（4 位数字）</div>
+                <input id="authPassword" class="auth-pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="••••" />
+                <div class="auth-tip">忘记密码的话，联系我就好。</div>
+            </div>
+            <div class="modal-footer auth-footer">
+                <button class="secondary-btn" type="button" id="authClearBtn">清除</button>
+                <button class="primary-btn" type="button" id="authSubmitBtn">进入</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal -->
     <div id="eventModal" class="modal">
         <div class="modal-content">
@@ -234,7 +251,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=20260126_4"></script>
+    <script src="script.js?v=20260126_5"></script>
 </body>
 
 </html>
