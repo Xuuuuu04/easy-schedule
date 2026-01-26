@@ -76,13 +76,25 @@ document.addEventListener('DOMContentLoaded', async function () {
     window.toastWarning = (message, title = '警告') => showToast({ type: 'warning', title, message });
     window.toastInfo = (message, title = '提示') => showToast({ type: 'info', title, message });
 
-    function loadExternalScript(url) {
+    function loadExternalScript(url, timeoutMs = 4500) {
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
+            const timer = setTimeout(() => {
+                try {
+                    s.remove();
+                } catch (e) { }
+                reject(new Error('timeout'));
+            }, timeoutMs);
             s.src = url;
             s.async = true;
-            s.onload = () => resolve(true);
-            s.onerror = () => reject(new Error('failed_to_load'));
+            s.onload = () => {
+                clearTimeout(timer);
+                resolve(true);
+            };
+            s.onerror = () => {
+                clearTimeout(timer);
+                reject(new Error('failed_to_load'));
+            };
             document.head.appendChild(s);
         });
     }
