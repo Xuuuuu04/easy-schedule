@@ -287,6 +287,23 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
     }
 
     import json
+    seen_message_ids = set()
+    last_emitted = None
+
+    def _extract_messages(obj):
+        msgs = []
+        if obj is None:
+            return msgs
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == "messages" and isinstance(v, list):
+                    msgs.extend(v)
+                else:
+                    msgs.extend(_extract_messages(v))
+        elif isinstance(obj, list):
+            for it in obj:
+                msgs.extend(_extract_messages(it))
+        return msgs
     # Use astream_events version 2 for reliable event monitoring
     async for event in graph.astream_events(inputs, config=config, version="v2"):
         kind = event["event"]
@@ -335,6 +352,19 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
             token = event.get("data", {}).get("token")
             if token:
                 yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
+
+        elif kind == "on_chain_stream":
+            chunk = event.get("data", {}).get("chunk")
+            for msg in _extract_messages(chunk):
+                msg_id = getattr(msg, "id", None)
+                if msg_id and msg_id in seen_message_ids:
+                    continue
+                content = getattr(msg, "content", None)
+                if isinstance(content, str) and content and content != last_emitted:
+                    last_emitted = content
+                    if msg_id:
+                        seen_message_ids.add(msg_id)
+                    yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
 
         # Capture when a tool starts to notify the user
         elif kind == "on_tool_start":
