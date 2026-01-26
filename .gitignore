@@ -13,6 +13,7 @@ venv.bak/
 .claude/
 .trae/
 .spec-workflow/
+.history/
 *.log
 data/*.db
 data/*.sqlite

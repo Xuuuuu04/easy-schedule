@@ -76,6 +76,12 @@ document.addEventListener('DOMContentLoaded', function () {
     window.toastWarning = (message, title = '警告') => showToast({ type: 'warning', title, message });
     window.toastInfo = (message, title = '提示') => showToast({ type: 'info', title, message });
 
+    if (typeof marked !== 'undefined' && marked && typeof marked.Renderer === 'function') {
+        const renderer = new marked.Renderer();
+        renderer.hr = () => '';
+        marked.setOptions({ renderer, breaks: true });
+    }
+
     // --- Student Color Management ---
     // 为每个学生分配固定的颜色，便于识别
     var studentColors = JSON.parse(localStorage.getItem('studentColors') || '{}');
@@ -124,6 +130,26 @@ document.addEventListener('DOMContentLoaded', function () {
         return studentColors[studentName];
     }
 
+    function escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function formatHHMM(date) {
+        if (!date) return '';
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+
+    function getResponsiveView(requestedView) {
+        const isMobile = window.innerWidth < 768;
+        if (requestedView === 'timeGridWeek' && isMobile) return 'listWeek';
+        return requestedView;
+    }
+
     // 重置学生颜色（用于测试）
     window.resetStudentColors = function () {
         studentColors = {};
@@ -150,6 +176,11 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (!isMobile && currentView === 'timeGridDay') {
                 calendar.changeView('dayGridMonth');
             }
+            if (isMobile && currentView === 'timeGridWeek') {
+                calendar.changeView('listWeek');
+            } else if (!isMobile && currentView === 'listWeek') {
+                calendar.changeView('timeGridWeek');
+            }
         },
         allDaySlot: false,
         slotMinTime: '08:00:00',
@@ -158,6 +189,73 @@ document.addEventListener('DOMContentLoaded', function () {
         height: '100%',
         nowIndicator: true, // 显示当前时间指示器
         events: '/api/courses', // Fetch from backend
+        eventContent: function (arg) {
+            const viewType = arg.view?.type || '';
+            const isMobile = window.innerWidth < 768;
+            if (!isMobile) return true;
+
+            const title = arg.event.title || '未命名课程';
+            const props = arg.event.extendedProps || {};
+            const studentName = props.student_name || '';
+            const location = props.location || '';
+            const price = props.price;
+            const durationMinutes = (arg.event.end && arg.event.start)
+                ? Math.max(0, Math.round((arg.event.end.getTime() - arg.event.start.getTime()) / 60000))
+                : 0;
+
+            const startText = formatHHMM(arg.event.start);
+            const endText = formatHHMM(arg.event.end);
+            const timeRangeText = startText && endText ? `${startText}-${endText}` : (arg.timeText || '');
+
+            const showStudent = Boolean(studentName) && durationMinutes >= 45;
+            const showLocation = Boolean(location) && durationMinutes >= 90;
+            const showTime = durationMinutes >= 35;
+
+            const titleLine = showStudent ? `${title} · ${studentName}` : title;
+            const listTitleLine = studentName ? `${title} · ${studentName}` : title;
+
+            const metaParts = [];
+            if (showTime && timeRangeText) {
+                metaParts.push(`<span class="mobile-event-time-pill fc-event-time">${escapeHtml(timeRangeText)}</span>`);
+            }
+            if (showLocation) {
+                metaParts.push(`<span class="mobile-event-location">${escapeHtml(location)}</span>`);
+            }
+
+            if (viewType === 'listWeek') {
+                const listMetaParts = [];
+                if (timeRangeText) {
+                    listMetaParts.push(`<span class="mobile-event-time-pill fc-event-time">${escapeHtml(timeRangeText)}</span>`);
+                }
+                if (location) {
+                    listMetaParts.push(`<span class="mobile-event-location">${escapeHtml(location)}</span>`);
+                }
+                if (price) {
+                    const p = Number(price);
+                    if (Number.isFinite(p) && p > 0) {
+                        listMetaParts.push(`<span class="mobile-event-price">¥${escapeHtml(p.toFixed(0))}</span>`);
+                    }
+                }
+                return {
+                    html: `
+                        <div class="mobile-list-event">
+                            <div class="mobile-list-title">${escapeHtml(listTitleLine)}</div>
+                            ${listMetaParts.length ? `<div class="mobile-event-meta">${listMetaParts.join('')}</div>` : ''}
+                        </div>
+                    `
+                };
+            }
+
+            if (!viewType.startsWith('timeGrid')) return true;
+            return {
+                html: `
+                    <div class="mobile-event-content">
+                        <div class="mobile-event-title fc-event-title">${escapeHtml(titleLine)}</div>
+                        ${metaParts.length ? `<div class="mobile-event-meta">${metaParts.join('')}</div>` : ''}
+                    </div>
+                `
+            };
+        },
 
         // --- Interactive Features ---
         editable: true,       // Allow drag & drop + resize
@@ -175,11 +273,27 @@ document.addEventListener('DOMContentLoaded', function () {
             const current = info.event;
             const props = current.extendedProps;
             const isDesktop = window.innerWidth >= 1024;
+            const viewType = info.view?.type || '';
 
             // 应用学生颜色
             const studentName = props.student_name;
             const price = props.price;
             const colorInfo = getStudentColor(studentName);
+
+            if (viewType === 'listWeek') {
+                const listDot = info.el.querySelector('.fc-list-event-dot');
+                if (listDot) {
+                    listDot.style.borderColor = colorInfo.primary;
+                    listDot.style.backgroundColor = colorInfo.primary;
+                }
+
+                const listTitleLink = info.el.querySelector('.fc-list-event-title a');
+                if (listTitleLink) {
+                    listTitleLink.style.borderLeft = `4px solid ${colorInfo.primary}`;
+                    listTitleLink.style.borderRadius = '10px';
+                    listTitleLink.style.paddingLeft = '10px';
+                }
+            }
 
             const eventMain = info.el.querySelector('.fc-event-main');
             if (eventMain) {
@@ -258,13 +372,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const viewButtons = document.querySelectorAll('.view-btn');
     function syncCalendarViewButtons(viewType) {
         viewButtons.forEach(function (b) { b.classList.remove('active'); });
-        const matched = document.querySelector(`.view-btn[data-view="${viewType}"]`);
+        const normalized = viewType === 'listWeek' ? 'timeGridWeek' : viewType;
+        const matched = document.querySelector(`.view-btn[data-view="${normalized}"]`);
         if (matched) matched.classList.add('active');
     }
     viewButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
             const view = this.getAttribute('data-view');
-            calendar.changeView(view);
+            calendar.changeView(getResponsiveView(view));
 
             viewButtons.forEach(function (b) {
                 b.classList.remove('active');
@@ -323,20 +438,19 @@ document.addEventListener('DOMContentLoaded', function () {
         let titleText = '';
         if (viewType === 'dayGridMonth') {
             titleText = `${year}年${month}月`;
-        } else if (viewType === 'timeGridWeek') {
+        } else if (viewType === 'timeGridWeek' || viewType === 'listWeek') {
             const weekEnd = new Date(date);
             weekEnd.setDate(weekEnd.getDate() + 6);
             const endMonth = weekEnd.getMonth() + 1;
+            const endDay = weekEnd.getDate();
             if (month === endMonth) {
-                titleText = `${year}年${month}月`;
+                titleText = `${year}年${month}月${day}日-${endDay}日`;
             } else {
-                titleText = `${year}年${month}月-${endMonth}月`;
+                titleText = `${year}年${month}月${day}日-${endMonth}月${endDay}日`;
             }
         } else if (viewType === 'timeGridDay') {
             const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             titleText = `${year}年${month}月${day}日 ${weekdays[date.getDay()]}`;
-        } else if (viewType === 'listWeek') {
-            titleText = `${year}年${month}月`;
         }
 
         titleEl.textContent = titleText;
@@ -448,6 +562,7 @@ document.addEventListener('DOMContentLoaded', function () {
         let isFirstChunk = true;
         let accumulatedText = '';
         let activeTools = [];
+        let suppressTokensUntilDone = false;
         let toolIconPaths = {};
         const TOOL_ICONS = {
             default: "M10 2c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 14.5c-3.59 0-6.5-2.91-6.5-6.5S6.41 3.5 10 3.5s6.5 2.91 6.5 6.5-2.91 6.5-6.5 6.5zm.5-10.5h-1v5l4.25 2.5.75-1.23-3.5-2.08V6z",
@@ -535,15 +650,29 @@ document.addEventListener('DOMContentLoaded', function () {
                                 contentDiv.appendChild(mdBody);
                             }
 
+                            if (suppressTokensUntilDone) {
+                                continue;
+                            }
+
+                            const renderText = accumulatedText
+                                .replace(/^[\t ]*[━─—\-_=]{8,}[\t ]*$/gm, '')
+                                .replace(/\n{3,}/g, '\n\n');
+
                             // Update markdown content
                             if (typeof marked !== 'undefined') {
-                                mdBody.innerHTML = marked.parse(accumulatedText);
+                                mdBody.innerHTML = marked.parse(renderText);
                             } else {
-                                mdBody.textContent = accumulatedText;
+                                mdBody.textContent = renderText;
                             }
 
                         } else if (data.type === 'tool_start' || data.type === 'tool') {
                             const toolName = data.name;
+                            suppressTokensUntilDone = true;
+
+                            let mdBody = contentDiv.querySelector('.markdown-body');
+                            if (mdBody) {
+                                mdBody.innerHTML = '';
+                            }
 
                             // Determine icon based on keywords
                             let iconPath = TOOL_ICONS.default;
@@ -605,6 +734,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            if (suppressTokensUntilDone) {
+                let mdBody = contentDiv.querySelector('.markdown-body');
+                if (!mdBody) {
+                    mdBody = document.createElement('div');
+                    mdBody.className = 'markdown-body';
+                    contentDiv.appendChild(mdBody);
+                }
+                const renderText = accumulatedText
+                    .replace(/^[\t ]*[━─—\-_=]{8,}[\t ]*$/gm, '')
+                    .replace(/\n{3,}/g, '\n\n');
+                if (typeof marked !== 'undefined') {
+                    mdBody.innerHTML = marked.parse(renderText);
+                } else {
+                    mdBody.textContent = renderText;
+                }
             }
 
             // Refetch calendar at the end of every message
@@ -1433,4 +1579,3 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 });
-

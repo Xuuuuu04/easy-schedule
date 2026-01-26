@@ -289,6 +289,7 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
     import json
     seen_message_ids = set()
     last_emitted = None
+    emission_mode = None
 
     def _extract_messages(obj):
         msgs = []
@@ -311,6 +312,9 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
         # We are looking for streaming tokens coming from the model node.
         # Different LangChain/LangGraph versions may emit different event names.
         if kind in ("on_chat_model_stream", "on_llm_stream"):
+            if emission_mode not in (None, "chat_model_stream"):
+                continue
+            emission_mode = "chat_model_stream"
             chunk = event.get("data", {}).get("chunk")
             content = None
             reasoning = None
@@ -349,11 +353,17 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
                 yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
 
         elif kind == "on_llm_new_token":
+            if emission_mode not in (None, "llm_new_token"):
+                continue
+            emission_mode = "llm_new_token"
             token = event.get("data", {}).get("token")
             if token:
                 yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
 
         elif kind == "on_chain_stream":
+            if emission_mode not in (None, "chain_stream"):
+                continue
+            emission_mode = "chain_stream"
             chunk = event.get("data", {}).get("chunk")
             for msg in _extract_messages(chunk):
                 msg_id = getattr(msg, "id", None)
