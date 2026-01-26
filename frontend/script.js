@@ -254,6 +254,25 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // View buttons
+    const viewButtons = document.querySelectorAll('.view-btn');
+    function syncCalendarViewButtons(viewType) {
+        viewButtons.forEach(function (b) { b.classList.remove('active'); });
+        const matched = document.querySelector(`.view-btn[data-view="${viewType}"]`);
+        if (matched) matched.classList.add('active');
+    }
+    viewButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const view = this.getAttribute('data-view');
+            calendar.changeView(view);
+
+            viewButtons.forEach(function (b) {
+                b.classList.remove('active');
+            });
+            this.classList.add('active');
+        });
+    });
+
     // Helper to sync drag/resize to backend
     async function handleEventUpdate(info) {
         const event = info.event;
@@ -330,26 +349,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('nextMonth').addEventListener('click', function () {
         calendar.next();
-    });
-
-    // View buttons
-    const viewButtons = document.querySelectorAll('.view-btn');
-    function syncCalendarViewButtons(viewType) {
-        viewButtons.forEach(function (b) { b.classList.remove('active'); });
-        const matched = document.querySelector(`.view-btn[data-view="${viewType}"]`);
-        if (matched) matched.classList.add('active');
-    }
-    viewButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            const view = this.getAttribute('data-view');
-            calendar.changeView(view);
-
-            // Update active state
-            viewButtons.forEach(function (b) {
-                b.classList.remove('active');
-            });
-            this.classList.add('active');
-        });
     });
 
     // Initial title update
