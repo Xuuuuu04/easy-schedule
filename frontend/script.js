@@ -523,6 +523,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
         const day = date.getDate();
+        const isCompact = window.innerWidth < 480;
 
         let titleText = '';
         if (viewType === 'dayGridMonth') {
@@ -532,14 +533,20 @@ document.addEventListener('DOMContentLoaded', function () {
             weekEnd.setDate(weekEnd.getDate() + 6);
             const endMonth = weekEnd.getMonth() + 1;
             const endDay = weekEnd.getDate();
-            if (month === endMonth) {
+            if (isCompact) {
+                titleText = `${month}/${day}-${endMonth}/${endDay}`;
+            } else if (month === endMonth) {
                 titleText = `${year}年${month}月${day}日-${endDay}日`;
             } else {
                 titleText = `${year}年${month}月${day}日-${endMonth}月${endDay}日`;
             }
         } else if (viewType === 'timeGridDay') {
             const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-            titleText = `${year}年${month}月${day}日 ${weekdays[date.getDay()]}`;
+            if (isCompact) {
+                titleText = `${month}月${day}日 ${weekdays[date.getDay()]}`;
+            } else {
+                titleText = `${year}年${month}月${day}日 ${weekdays[date.getDay()]}`;
+            }
         }
 
         titleEl.textContent = titleText;
@@ -557,6 +564,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initial title update
     updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
     syncCalendarViewButtons(calendar.view.type);
+
+    let calendarTitleResizeTimer = null;
+    window.addEventListener('resize', () => {
+        if (calendarTitleResizeTimer) clearTimeout(calendarTitleResizeTimer);
+        calendarTitleResizeTimer = setTimeout(() => {
+            updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
+        }, 150);
+    });
 
     // --- Sidebar Toggle ---
     window.toggleSidebar = function () {
@@ -594,7 +609,15 @@ document.addEventListener('DOMContentLoaded', function () {
     let currentThreadId = 'thread-' + Date.now();
 
     window.startNewChat = function () {
-        if (confirm('确定要开始新对话吗？当前对话记录将会清除。')) {
+        showConfirmModal({
+            title: '开始新对话',
+            message: '确定要开始新的对话吗？',
+            detail: '当前对话内容会清空。',
+            confirmText: '开始',
+            cancelText: '取消',
+            danger: false
+        }).then((confirmed) => {
+            if (!confirmed) return;
             currentThreadId = 'thread-' + Date.now();
             messagesContainer.innerHTML = `
                 <div class="message ai-message">
@@ -604,7 +627,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             `;
             toastInfo('已开始新会话');
-        }
+        });
     };
 
     window.adjustTextareaHeight = function (el) {
@@ -892,6 +915,88 @@ document.addEventListener('DOMContentLoaded', function () {
         return msgDiv;
     }
 
+    function showConfirmModal(options) {
+        const modal = document.getElementById('confirmModal');
+        const titleEl = document.getElementById('confirmTitle');
+        const bodyEl = document.getElementById('confirmBody');
+        const footerEl = document.getElementById('confirmFooter');
+        const closeBtn = document.querySelector('.close-confirm-btn');
+
+        if (!modal || !titleEl || !bodyEl || !footerEl || !closeBtn) {
+            return Promise.resolve(window.confirm((options && options.message) || '确定吗？'));
+        }
+
+        const {
+            title = '请确认',
+            message = '',
+            detail = '',
+            confirmText = '确定',
+            cancelText = '取消',
+            danger = false
+        } = options || {};
+
+        titleEl.textContent = title;
+        bodyEl.innerHTML = '';
+        const msgP = document.createElement('div');
+        msgP.style.fontWeight = '700';
+        msgP.style.marginBottom = detail ? '10px' : '0';
+        msgP.textContent = message;
+        bodyEl.appendChild(msgP);
+        if (detail) {
+            const detailP = document.createElement('div');
+            detailP.style.color = 'var(--text-secondary)';
+            detailP.style.fontSize = '0.92rem';
+            detailP.style.lineHeight = '1.5';
+            detailP.textContent = detail;
+            bodyEl.appendChild(detailP);
+        }
+
+        footerEl.innerHTML = '';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'secondary-btn';
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = cancelText;
+        const okBtn = document.createElement('button');
+        okBtn.className = danger ? 'danger-btn' : 'primary-btn';
+        okBtn.type = 'button';
+        okBtn.textContent = confirmText;
+        footerEl.appendChild(cancelBtn);
+        footerEl.appendChild(okBtn);
+
+        modal.style.display = 'flex';
+
+        return new Promise((resolve) => {
+            const cleanup = () => {
+                cancelBtn.onclick = null;
+                okBtn.onclick = null;
+                closeBtn.onclick = null;
+                modal.removeEventListener('click', onBackdropClick);
+                document.removeEventListener('keydown', onKeyDown);
+            };
+
+            const close = (result) => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve(result);
+            };
+
+            const onBackdropClick = (e) => {
+                if (e.target === modal) close(false);
+            };
+
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') close(false);
+            };
+
+            cancelBtn.onclick = () => close(false);
+            closeBtn.onclick = () => close(false);
+            okBtn.onclick = () => close(true);
+
+            modal.addEventListener('click', onBackdropClick);
+            document.addEventListener('keydown', onKeyDown);
+        });
+    }
+
     // --- Manual Editing Logic ---
     const modal = document.getElementById('eventModal');
     const modalInfo = document.getElementById('modalInfo');
@@ -908,10 +1013,12 @@ document.addEventListener('DOMContentLoaded', function () {
         modal.style.display = "none";
     };
 
-    window.onclick = function (event) {
-        if (event.target == modal) {
-            modal.style.display = "none";
-        }
+    if (modal) {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
     }
 
     function showEditModal(event) {
@@ -1116,19 +1223,28 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     window.deleteCourse = async function (id) {
-        if (!confirm('确定要删除这个课程吗？')) return;
+        const ok = await showConfirmModal({
+            title: '删除课程',
+            message: '确定要删除这节课吗？',
+            detail: '删除后无法恢复。',
+            confirmText: '删除',
+            cancelText: '取消',
+            danger: true
+        });
+        if (!ok) return;
 
         try {
             const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 modal.style.display = 'none';
                 calendar.refetchEvents();
+                toastSuccess('已删除课程');
             } else {
-                alert('删除失败');
+                toastError('删除失败');
             }
         } catch (e) {
             console.error(e);
-            alert('网络错误');
+            toastError('网络错误');
         }
     }
 
@@ -1642,8 +1758,15 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     window.deleteStudent = async function (studentId, studentName) {
-        const confirmed = confirm(`确定要删除学生"${studentName}"吗？\n\n删除后将同时删除该学生的所有课程记录！`);
-        if (!confirmed) return;
+        const ok = await showConfirmModal({
+            title: '删除学生',
+            message: `确定要删除学生“${studentName}”吗？`,
+            detail: '删除后将同时删除该学生的所有课程记录，且无法恢复。',
+            confirmText: '删除',
+            cancelText: '取消',
+            danger: true
+        });
+        if (!ok) return;
 
         try {
             const res = await fetch(`/api/students/${studentId}`, { method: 'DELETE' });

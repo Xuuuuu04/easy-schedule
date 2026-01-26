@@ -67,6 +67,12 @@ body {
     line-height: 1.6;
 }
 
+@supports (height: 100dvh) {
+    body {
+        height: 100dvh;
+    }
+}
+
 /* Layout */
 .app-container {
     display: flex;
@@ -563,6 +569,9 @@ body.auth-locked .app-container {
     color: var(--text-primary);
     text-align: center;
     flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .calendar-views {
@@ -1523,21 +1532,6 @@ body.auth-locked .app-container {
     gap: 16px;
 }
 
-/* Modern Buttons */
-.primary-btn {
-    background: linear-gradient(135deg, var(--primary-color) 0%, #D10984 100%);
-    box-shadow: 0 4px 6px -1px rgba(237, 13, 146, 0.3);
-    padding: 10px 28px;
-    border-radius: 12px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-}
-
-.primary-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 12px -1px rgba(237, 13, 146, 0.4);
-}
-
 .danger-btn {
     color: var(--error-color);
     background: #FEF2F2;
@@ -2309,6 +2303,41 @@ body.auth-locked .app-container {
         padding: 12px;
     }
 
+    .calendar-header {
+        padding: 10px 12px;
+        border-radius: 14px 14px 0 0;
+        gap: 10px;
+    }
+
+    .calendar-title {
+        font-size: 1rem;
+        line-height: 1.2;
+    }
+
+    .nav-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+    }
+
+    .nav-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .calendar-views {
+        padding: 3px;
+        border-radius: 10px;
+        gap: 4px;
+    }
+
+    .view-btn {
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: 0.68rem;
+        gap: 2px;
+    }
+
     /* FullCalendar Mobile Optimizations */
     .fc-toolbar {
         flex-direction: column !important;
@@ -2520,12 +2549,44 @@ body.auth-locked .app-container {
 
     /* Top bar mobile optimization */
     .top-bar {
-        padding: 0 12px;
-        height: 56px;
+        padding-left: calc(12px + env(safe-area-inset-left));
+        padding-right: calc(12px + env(safe-area-inset-right));
+        height: calc(52px + env(safe-area-inset-top));
+        padding-top: env(safe-area-inset-top);
     }
 
     .page-title h1 {
         font-size: 1.1rem;
+    }
+
+    .tab-navigation {
+        padding: 3px;
+        border-radius: 10px;
+        gap: 6px;
+    }
+
+    .tab-btn {
+        padding: 7px 10px;
+        font-size: 0.85rem;
+        gap: 6px;
+    }
+
+    .tab-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .students-wrapper {
+        padding: 12px;
+    }
+
+    .students-list {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .student-card {
+        padding: 16px;
     }
 
     /* Button spacing adjustments */
@@ -2565,44 +2626,14 @@ body.auth-locked .app-container {
     .calendar-wrapper {
         padding: 8px;
     }
-}
 
-/* Button Styles */
-.primary-btn {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 20px;
-    /* Pill shape */
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s;
-    box-shadow: 0 4px 6px rgba(237, 13, 146, 0.2);
-}
+    .view-btn span {
+        display: none;
+    }
 
-.primary-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(237, 13, 146, 0.3);
-}
-
-.secondary-btn {
-    background: white;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-    padding: 8px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.2s;
-}
-
-.secondary-btn:hover {
-    background: #F8FAFC;
-    color: var(--text-primary);
+    .tab-btn span {
+        display: none;
+    }
 }
 
 /* --- Tool Execution Hat (Hello Kitty Style) --- */
