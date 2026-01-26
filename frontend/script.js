@@ -800,6 +800,114 @@ document.addEventListener('DOMContentLoaded', async function () {
             check: "M7.25 12.25L9.5 14.5 15.5 8.5"
         };
 
+        function stripLeakedToolJson(text, enabled) {
+            if (!enabled || !text) return text;
+
+            const isLikelyToolData = (val) => {
+                const toolKeys = new Set([
+                    'id', 'student_id', 'student_name', 'student_grade',
+                    'phone', 'parent_contact', 'progress', 'notes',
+                    'title', 'start', 'end', 'location', 'price', 'color',
+                    'description'
+                ]);
+
+                const scoreObject = (obj) => {
+                    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return 0;
+                    let score = 0;
+                    for (const k of Object.keys(obj)) {
+                        if (toolKeys.has(k)) score++;
+                    }
+                    return score;
+                };
+
+                if (Array.isArray(val)) {
+                    if (val.length === 0) return true;
+                    const head = val[0];
+                    if (head && typeof head === 'object' && !Array.isArray(head)) {
+                        return scoreObject(head) >= 2;
+                    }
+                    return false;
+                }
+
+                if (val && typeof val === 'object') {
+                    return scoreObject(val) >= 3;
+                }
+
+                return false;
+            };
+
+            const findJsonEnd = (s, startIdx) => {
+                const first = s[startIdx];
+                if (first !== '{' && first !== '[') return -1;
+                const stack = [first === '{' ? '}' : ']'];
+                let inStr = false;
+                let esc = false;
+                for (let i = startIdx + 1; i < s.length; i++) {
+                    const ch = s[i];
+                    if (inStr) {
+                        if (esc) {
+                            esc = false;
+                            continue;
+                        }
+                        if (ch === '\\') {
+                            esc = true;
+                            continue;
+                        }
+                        if (ch === '"') {
+                            inStr = false;
+                        }
+                        continue;
+                    }
+
+                    if (ch === '"') {
+                        inStr = true;
+                        continue;
+                    }
+
+                    if (ch === '{') {
+                        stack.push('}');
+                        continue;
+                    }
+                    if (ch === '[') {
+                        stack.push(']');
+                        continue;
+                    }
+                    if (stack.length && ch === stack[stack.length - 1]) {
+                        stack.pop();
+                        if (stack.length === 0) return i;
+                    }
+                }
+                return -1;
+            };
+
+            let out = '';
+            for (let i = 0; i < text.length;) {
+                const ch = text[i];
+                if (ch === '{' || ch === '[') {
+                    const end = findJsonEnd(text, i);
+                    if (end !== -1) {
+                        const candidate = text.slice(i, end + 1);
+                        if (candidate.length <= 20000) {
+                            try {
+                                const parsed = JSON.parse(candidate);
+                                if (isLikelyToolData(parsed)) {
+                                    i = end + 1;
+                                    continue;
+                                }
+                            } catch (e) { }
+                        }
+                    }
+                }
+                out += ch;
+                i++;
+            }
+
+            return out
+                .replace(/\n\s*\n\s*\n+/g, '\n\n')
+                .replace(/^\s*\[\s*\]\s*$/gm, '')
+                .trim();
+        }
+
         function ensureToolHatToggle(toolHat) {
             const toggle = () => {
                 if (toolHat.classList.contains('collapsed')) {
@@ -950,13 +1058,46 @@ document.addEventListener('DOMContentLoaded', async function () {
                             }
 
                             const renderText = accumulatedText
+                                .split('\u0000').join('')
+                                .split('\u0001').join('')
+                                .split('\u0002').join('')
+                                .split('\u0003').join('')
+                                .split('\u0004').join('')
+                                .split('\u0005').join('')
+                                .split('\u0006').join('')
+                                .split('\u0007').join('')
+                                .split('\u0008').join('')
+                                .split('\u000b').join('')
+                                .split('\u000c').join('')
+                                .split('\u000e').join('')
+                                .split('\u000f').join('')
+                                .split('\u0010').join('')
+                                .split('\u0011').join('')
+                                .split('\u0012').join('')
+                                .split('\u0013').join('')
+                                .split('\u0014').join('')
+                                .split('\u0015').join('')
+                                .split('\u0016').join('')
+                                .split('\u0017').join('')
+                                .split('\u0018').join('')
+                                .split('\u0019').join('')
+                                .split('\u001a').join('')
+                                .split('\u001b').join('')
+                                .split('\u001c').join('')
+                                .split('\u001d').join('')
+                                .split('\u001e').join('')
+                                .split('\u001f').join('')
+                                .replace(/\r\n/g, '\n')
+                                .replace(/\r/g, '\n');
+                            const safeText = stripLeakedToolJson(renderText, toolsHistory.length > 0);
+                            const finalText = safeText
                                 .replace(/^[\t ]*[━─—\-_=]{8,}[\t ]*$/gm, '')
                                 .replace(/\n{3,}/g, '\n\n');
 
                             if (typeof marked !== 'undefined') {
-                                mdBody.innerHTML = marked.parse(renderText);
+                                mdBody.innerHTML = marked.parse(finalText);
                             } else {
-                                mdBody.textContent = renderText;
+                                mdBody.textContent = finalText;
                             }
 
                         } else if (data.type === 'tool_start' || data.type === 'tool') {
