@@ -928,17 +928,20 @@ document.addEventListener('DOMContentLoaded', async function () {
                         }
 
                         if (data.type === 'token') {
+                            if (suppressTokensUntilDone) {
+                                continue;
+                            }
+
                             accumulatedText += data.content;
-                            
+
                             if (isFirstChunk) {
-                                contentDiv.innerHTML = ''; // Clear typing indicator
+                                contentDiv.innerHTML = '';
                                 const mdBody = document.createElement('div');
                                 mdBody.className = 'markdown-body';
                                 contentDiv.appendChild(mdBody);
                                 isFirstChunk = false;
                             }
 
-                            // Find or create markdown body
                             let mdBody = contentDiv.querySelector('.markdown-body');
                             if (!mdBody) {
                                 mdBody = document.createElement('div');
@@ -946,15 +949,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                                 contentDiv.appendChild(mdBody);
                             }
 
-                            if (suppressTokensUntilDone) {
-                                continue;
-                            }
-
                             const renderText = accumulatedText
                                 .replace(/^[\t ]*[━─—\-_=]{8,}[\t ]*$/gm, '')
                                 .replace(/\n{3,}/g, '\n\n');
 
-                            // Update markdown content
                             if (typeof marked !== 'undefined') {
                                 mdBody.innerHTML = marked.parse(renderText);
                             } else {
@@ -1010,6 +1008,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                             const toolName = data.name;
                             const idx = activeTools.indexOf(toolName);
                             if (idx !== -1) activeTools.splice(idx, 1);
+                            suppressTokensUntilDone = activeTools.length > 0;
                             
                             // Smart Hat Management
                             const toolHat = contentDiv.querySelector('.tool-hat');
@@ -1035,25 +1034,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
 
-            if (suppressTokensUntilDone) {
-                let mdBody = contentDiv.querySelector('.markdown-body');
-                if (!mdBody) {
-                    mdBody = document.createElement('div');
-                    mdBody.className = 'markdown-body';
-                    contentDiv.appendChild(mdBody);
-                }
-                const renderText = accumulatedText
-                    .replace(/^[\t ]*[━─—\-_=]{8,}[\t ]*$/gm, '')
-                    .replace(/\n{3,}/g, '\n\n');
-                if (typeof marked !== 'undefined') {
-                    mdBody.innerHTML = marked.parse(renderText);
-                } else {
-                    mdBody.textContent = renderText;
-                }
-            }
-
             // Refetch calendar at the end of every message
-            calendar.refetchEvents();
+            if (calendar) {
+                calendar.refetchEvents();
+            }
 
         } catch (err) {
             console.error('Request error:', err);
