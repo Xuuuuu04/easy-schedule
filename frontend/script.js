@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
     // --- Toast Notification System ---
     window.showToast = function (options) {
         const container = document.getElementById('toastContainer');
@@ -76,10 +76,80 @@ document.addEventListener('DOMContentLoaded', function () {
     window.toastWarning = (message, title = '警告') => showToast({ type: 'warning', title, message });
     window.toastInfo = (message, title = '提示') => showToast({ type: 'info', title, message });
 
-    if (typeof marked !== 'undefined' && marked && typeof marked.Renderer === 'function') {
-        const renderer = new marked.Renderer();
+    function loadExternalScript(url) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = url;
+            s.async = true;
+            s.onload = () => resolve(true);
+            s.onerror = () => reject(new Error('failed_to_load'));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function ensureGlobal(checkFn, urls) {
+        try {
+            if (checkFn()) return true;
+        } catch (e) { }
+        for (const url of urls) {
+            try {
+                await loadExternalScript(url);
+                if (checkFn()) return true;
+            } catch (e) { }
+        }
+        return false;
+    }
+
+    window.toggleSidebar = window.toggleSidebar || function () {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        if (!sidebar || !overlay) return;
+        const isMobile = window.innerWidth < 1024;
+        if (isMobile) {
+            sidebar.classList.toggle('mobile-open');
+            if (sidebar.classList.contains('mobile-open')) {
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+        } else {
+            sidebar.classList.toggle('closed');
+        }
+    };
+
+    window.closeSidebar = window.closeSidebar || function () {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        if (!sidebar || !overlay) return;
+        sidebar.classList.remove('mobile-open');
+        overlay.classList.remove('active');
+    };
+
+    window.switchTab = window.switchTab || function () {
+        toastInfo('页面还在加载中，请稍等一下');
+    };
+
+    window.showAddModal = window.showAddModal || function () {
+        toastInfo('页面还在加载中，请稍等一下');
+    };
+
+    window.showAddStudentModal = window.showAddStudentModal || function () {
+        toastInfo('页面还在加载中，请稍等一下');
+    };
+
+    await ensureGlobal(
+        () => typeof window.marked !== 'undefined' && window.marked && typeof window.marked.Renderer === 'function',
+        [
+            'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
+            'https://unpkg.com/marked/marked.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/marked/13.0.2/marked.min.js'
+        ]
+    );
+
+    if (typeof window.marked !== 'undefined' && window.marked && typeof window.marked.Renderer === 'function') {
+        const renderer = new window.marked.Renderer();
         renderer.hr = () => '';
-        marked.setOptions({ renderer, breaks: true });
+        window.marked.setOptions({ renderer, breaks: true });
     }
 
     (function () {
@@ -239,11 +309,57 @@ document.addEventListener('DOMContentLoaded', function () {
         return requestedView;
     }
 
+    function syncCalendarViewButtons(viewType) {
+        const viewButtons = document.querySelectorAll('.view-btn');
+        viewButtons.forEach(function (b) { b.classList.remove('active'); });
+        const normalized = viewType === 'listWeek' ? 'timeGridWeek' : viewType;
+        const matched = document.querySelector(`.view-btn[data-view="${normalized}"]`);
+        if (matched) matched.classList.add('active');
+    }
+
+    function updateCalendarTitle(date, viewType) {
+        const titleEl = document.getElementById('calendarTitle');
+        if (!titleEl || !date) return;
+
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const isCompact = window.innerWidth < 480;
+
+        let titleText = '';
+        if (viewType === 'dayGridMonth') {
+            titleText = `${year}年${month}月`;
+        } else if (viewType === 'timeGridWeek' || viewType === 'listWeek') {
+            const weekEnd = new Date(date);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            const endMonth = weekEnd.getMonth() + 1;
+            const endDay = weekEnd.getDate();
+            if (isCompact) {
+                titleText = `${month}/${day}-${endMonth}/${endDay}`;
+            } else if (month === endMonth) {
+                titleText = `${year}年${month}月${day}日-${endDay}日`;
+            } else {
+                titleText = `${year}年${month}月${day}日-${endMonth}月${endDay}日`;
+            }
+        } else if (viewType === 'timeGridDay') {
+            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            if (isCompact) {
+                titleText = `${month}月${day}日 ${weekdays[date.getDay()]}`;
+            } else {
+                titleText = `${year}年${month}月${day}日 ${weekdays[date.getDay()]}`;
+            }
+        }
+
+        titleEl.textContent = titleText;
+    }
+
     // 重置学生颜色（用于测试）
     window.resetStudentColors = function () {
         studentColors = {};
         localStorage.removeItem('studentColors');
-        calendar.refetchEvents();
+        if (calendar) {
+            calendar.refetchEvents();
+        }
         toastSuccess('学生颜色已重置');
     };
 
@@ -253,7 +369,23 @@ document.addEventListener('DOMContentLoaded', function () {
     // Determine initial view based on screen width
     var initialView = window.innerWidth < 768 ? 'timeGridDay' : 'dayGridMonth';
 
-    var calendar = new FullCalendar.Calendar(calendarEl, {
+    var calendar = null;
+
+    const calendarReady = await ensureGlobal(
+        () => typeof window.FullCalendar !== 'undefined' && window.FullCalendar && typeof window.FullCalendar.Calendar === 'function',
+        [
+            'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js',
+            'https://unpkg.com/fullcalendar@6.1.10/index.global.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.19/index.global.min.js'
+        ]
+    );
+
+    if (!calendarReady || !calendarEl) {
+        if (!calendarReady) {
+            toastError('日历组件加载失败，请检查网络后刷新页面', '加载失败');
+        }
+    } else {
+        calendar = new window.FullCalendar.Calendar(calendarEl, {
         initialView: initialView,
         headerToolbar: false, // 隐藏默认工具栏
         locale: 'zh-cn',
@@ -455,27 +587,20 @@ document.addEventListener('DOMContentLoaded', function () {
         eventResize: async function (info) {
             await handleEventUpdate(info);
         }
-    });
-
-    // View buttons
-    const viewButtons = document.querySelectorAll('.view-btn');
-    function syncCalendarViewButtons(viewType) {
-        viewButtons.forEach(function (b) { b.classList.remove('active'); });
-        const normalized = viewType === 'listWeek' ? 'timeGridWeek' : viewType;
-        const matched = document.querySelector(`.view-btn[data-view="${normalized}"]`);
-        if (matched) matched.classList.add('active');
-    }
-    viewButtons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            const view = this.getAttribute('data-view');
-            calendar.changeView(getResponsiveView(view));
-
-            viewButtons.forEach(function (b) {
-                b.classList.remove('active');
-            });
-            this.classList.add('active');
         });
-    });
+    }
+
+    const viewButtons = document.querySelectorAll('.view-btn');
+    if (calendar) {
+        viewButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const view = this.getAttribute('data-view');
+                if (!view) return;
+                calendar.changeView(getResponsiveView(view));
+                syncCalendarViewButtons(calendar.view.type);
+            });
+        });
+    }
 
     // Helper to sync drag/resize to backend
     async function handleEventUpdate(info) {
@@ -504,72 +629,46 @@ document.addEventListener('DOMContentLoaded', function () {
             // Success: show toast
             toastSuccess('课程已更新');
             // Re-render to update conflict styles if any moved
-            calendar.render();
+            if (calendar) {
+                calendar.render();
+            }
 
         } catch (e) {
             toastError('保存失败，正在还原...');
             info.revert();
         }
     }
-    calendar.render();
+    if (calendar) {
+        calendar.render();
+    }
 
     // --- Custom Calendar Header Functions ---
 
-    // Format title based on view type
-    function updateCalendarTitle(date, viewType) {
-        const titleEl = document.getElementById('calendarTitle');
-        if (!titleEl) return;
-
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const day = date.getDate();
-        const isCompact = window.innerWidth < 480;
-
-        let titleText = '';
-        if (viewType === 'dayGridMonth') {
-            titleText = `${year}年${month}月`;
-        } else if (viewType === 'timeGridWeek' || viewType === 'listWeek') {
-            const weekEnd = new Date(date);
-            weekEnd.setDate(weekEnd.getDate() + 6);
-            const endMonth = weekEnd.getMonth() + 1;
-            const endDay = weekEnd.getDate();
-            if (isCompact) {
-                titleText = `${month}/${day}-${endMonth}/${endDay}`;
-            } else if (month === endMonth) {
-                titleText = `${year}年${month}月${day}日-${endDay}日`;
-            } else {
-                titleText = `${year}年${month}月${day}日-${endMonth}月${endDay}日`;
-            }
-        } else if (viewType === 'timeGridDay') {
-            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-            if (isCompact) {
-                titleText = `${month}月${day}日 ${weekdays[date.getDay()]}`;
-            } else {
-                titleText = `${year}年${month}月${day}日 ${weekdays[date.getDay()]}`;
-            }
-        }
-
-        titleEl.textContent = titleText;
-    }
-
     // Navigation buttons
-    document.getElementById('prevMonth').addEventListener('click', function () {
-        calendar.prev();
-    });
-
-    document.getElementById('nextMonth').addEventListener('click', function () {
-        calendar.next();
-    });
-
-    // Initial title update
-    updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
-    syncCalendarViewButtons(calendar.view.type);
+    const prevBtn = document.getElementById('prevMonth');
+    const nextBtn = document.getElementById('nextMonth');
+    if (calendar) {
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function () {
+                calendar.prev();
+            });
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function () {
+                calendar.next();
+            });
+        }
+        updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
+        syncCalendarViewButtons(calendar.view.type);
+    }
 
     let calendarTitleResizeTimer = null;
     window.addEventListener('resize', () => {
         if (calendarTitleResizeTimer) clearTimeout(calendarTitleResizeTimer);
         calendarTitleResizeTimer = setTimeout(() => {
-            updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
+            if (calendar) {
+                updateCalendarTitle(calendar.view.currentStart, calendar.view.type);
+            }
         }, 150);
     });
 
@@ -591,7 +690,9 @@ document.addEventListener('DOMContentLoaded', function () {
             sidebar.classList.toggle('closed');
             // Trigger calendar resize because main content width changed
             setTimeout(() => {
-                calendar.updateSize();
+                if (calendar) {
+                    calendar.updateSize();
+                }
             }, 300);
         }
     }
@@ -1003,11 +1104,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const modalFooter = document.getElementById('modalFooter');
     let currentEventId = null;
 
-    // Update event click to show edit form
-    calendar.setOption('eventClick', function (info) {
-        currentEventId = info.event.id;
-        showEditModal(info.event);
-    });
+    if (calendar) {
+        calendar.setOption('eventClick', function (info) {
+            currentEventId = info.event.id;
+            showEditModal(info.event);
+        });
+    }
 
     document.querySelector('.close-modal-btn').onclick = () => {
         modal.style.display = "none";
@@ -1405,7 +1507,11 @@ document.addEventListener('DOMContentLoaded', function () {
             calendarAction.style.display = 'flex';
             studentAction.style.display = 'none';
             // 刷新日历尺寸
-            setTimeout(() => calendar.updateSize(), 100);
+            setTimeout(() => {
+                if (calendar) {
+                    calendar.updateSize();
+                }
+            }, 100);
         } else {
             calendarView.style.display = 'none';
             studentsView.style.display = 'flex';
