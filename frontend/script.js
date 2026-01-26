@@ -787,6 +787,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         let isFirstChunk = true;
         let accumulatedText = '';
         let activeTools = [];
+        let toolsHistory = [];
         let suppressTokensUntilDone = false;
         let toolIconPaths = {};
         const TOOL_ICONS = {
@@ -798,6 +799,76 @@ document.addEventListener('DOMContentLoaded', async function () {
             calc: "M4 3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4zm0 2h12v3H4V5zm0 5h3v2H4v-2zm5 0h3v2H9v-2zm5 0h2v2h-2v-2zm-5 4h3v2H9v-2zm-5 0h3v2H4v-2zm10 0h2v2h-2v-2z",
             check: "M7.25 12.25L9.5 14.5 15.5 8.5"
         };
+
+        function ensureToolHatToggle(toolHat) {
+            const toggle = () => {
+                if (toolHat.classList.contains('collapsed')) {
+                    toolHat.classList.remove('collapsed');
+                    toolHat.classList.add('expanded');
+                    toolHat.setAttribute('aria-expanded', 'true');
+                } else {
+                    toolHat.classList.remove('expanded');
+                    toolHat.classList.add('collapsed');
+                    toolHat.setAttribute('aria-expanded', 'false');
+                }
+            };
+
+            toolHat.addEventListener('click', toggle);
+            toolHat.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggle();
+                }
+            });
+        }
+
+        function lockToolHat(toolHat) {
+            const count = toolsHistory.length;
+            toolHat.classList.remove('hiding');
+            toolHat.classList.add('locked', 'collapsed');
+            toolHat.setAttribute('role', 'button');
+            toolHat.setAttribute('tabindex', '0');
+            toolHat.setAttribute('aria-expanded', 'false');
+
+            const itemsHtml = toolsHistory.map((t, idx) => {
+                const iconPath = t.iconPath || TOOL_ICONS.default;
+                return `
+                    <div class="tool-hat-item">
+                        <div class="tool-hat-item-index">${idx + 1}</div>
+                        <div class="tool-hat-item-icon">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
+                                <path d="${iconPath}"></path>
+                            </svg>
+                        </div>
+                        <div class="tool-hat-item-name">${escapeHtml(t.name || '')}</div>
+                    </div>
+                `;
+            }).join('');
+
+            toolHat.innerHTML = `
+                <div class="tool-hat-row">
+                    <div class="tool-hat-icon">
+                        <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
+                            <path d="${TOOL_ICONS.check}"></path>
+                        </svg>
+                    </div>
+                    <div class="tool-hat-text">工具调用完成 · 共 ${count} 个（点开查看）</div>
+                    <div class="tool-hat-toggle" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9l6 6 6-6"></path>
+                        </svg>
+                    </div>
+                </div>
+                <div class="tool-hat-details">
+                    ${itemsHtml}
+                </div>
+            `;
+
+            if (!toolHat.dataset.boundToggle) {
+                toolHat.dataset.boundToggle = '1';
+                ensureToolHatToggle(toolHat);
+            }
+        }
 
         try {
             const response = await fetch('/api/ai/chat', {
@@ -908,6 +979,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                             if (toolName.includes("检查")) iconPath = TOOL_ICONS.check;
                             toolIconPaths[toolName] = iconPath;
                             activeTools.push(toolName);
+                            toolsHistory.push({ name: toolName, iconPath });
 
                             // --- 1. Tool Hat Logic (Hello Kitty Style) ---
                             let toolHat = contentDiv.querySelector('.tool-hat');
@@ -916,6 +988,13 @@ document.addEventListener('DOMContentLoaded', async function () {
                                 toolHat.className = 'tool-hat';
                                 // Prepend to contentDiv so it sits at the top
                                 contentDiv.insertBefore(toolHat, contentDiv.firstChild);
+                            }
+                            if (toolHat.classList.contains('locked')) {
+                                toolHat.className = 'tool-hat';
+                                toolHat.removeAttribute('role');
+                                toolHat.removeAttribute('tabindex');
+                                toolHat.removeAttribute('aria-expanded');
+                                delete toolHat.dataset.boundToggle;
                             }
                             
                             toolHat.innerHTML = `
@@ -942,12 +1021,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                                     const pathEl = toolHat.querySelector('.tool-hat-icon path');
                                     if (pathEl) pathEl.setAttribute('d', toolIconPaths[nextName] || TOOL_ICONS.default);
                                 } else {
-                                    toolHat.classList.add('hiding');
-                                    toolHat.addEventListener('animationend', () => {
-                                        if (toolHat.parentElement) {
-                                            toolHat.remove();
-                                        }
-                                    });
+                                    lockToolHat(toolHat);
                                 }
                             }
                         }
