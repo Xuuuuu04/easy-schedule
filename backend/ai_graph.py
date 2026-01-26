@@ -286,7 +286,6 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
     }
 
     import json
-    emitted_token = False
     # Use astream_events version 2 for reliable event monitoring
     async for event in graph.astream_events(inputs, config=config, version="v2"):
         kind = event["event"]
@@ -308,40 +307,7 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
 
             # Emit standard content if present
             if content:
-                emitted_token = True
                 yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
-
-        elif kind == "on_chat_model_end":
-            if emitted_token:
-                continue
-            output = event.get("data", {}).get("output")
-            final_content = None
-
-            try:
-                if output is None:
-                    final_content = None
-                elif hasattr(output, "generations"):
-                    gens = getattr(output, "generations", None) or []
-                    if gens and gens[0]:
-                        g0 = gens[0][0]
-                        if hasattr(g0, "message") and getattr(g0, "message") is not None:
-                            final_content = getattr(g0.message, "content", None)
-                        elif hasattr(g0, "text"):
-                            final_content = getattr(g0, "text", None)
-                elif isinstance(output, dict):
-                    gens = output.get("generations") or []
-                    if gens and gens[0]:
-                        g0 = gens[0][0]
-                        if isinstance(g0, dict):
-                            msg = g0.get("message") or {}
-                            if isinstance(msg, dict):
-                                final_content = msg.get("content") or g0.get("text")
-            except Exception:
-                final_content = None
-
-            if final_content:
-                emitted_token = True
-                yield json.dumps({"type": "token", "content": final_content}, ensure_ascii=False) + "\n"
 
         # Capture when a tool starts to notify the user
         elif kind == "on_tool_start":
@@ -354,28 +320,3 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
             tool_name = event["name"]
             display_name = TOOL_DISPLAY_MAP.get(tool_name, tool_name)
             yield json.dumps({"type": "tool_end", "name": display_name}, ensure_ascii=False) + "\n"
-
-        elif kind == "on_chain_end":
-            if emitted_token:
-                continue
-            data = event.get("data", {}) or {}
-            output = data.get("output")
-            if not output:
-                continue
-            try:
-                msgs = None
-                if isinstance(output, dict):
-                    msgs = output.get("messages")
-                if msgs and isinstance(msgs, list):
-                    last = msgs[-1]
-                    if hasattr(last, "content"):
-                        content = last.content
-                    elif isinstance(last, dict):
-                        content = (last.get("content") if isinstance(last.get("content"), str) else None)
-                    else:
-                        content = None
-                    if content:
-                        emitted_token = True
-                        yield json.dumps({"type": "token", "content": content}, ensure_ascii=False) + "\n"
-            except Exception:
-                continue
