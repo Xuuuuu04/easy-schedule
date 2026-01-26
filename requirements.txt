@@ -3,6 +3,7 @@ uvicorn
 pydantic
 openai
 python-multipart
+python-dotenv
 langgraph
 langchain
 langchain_openai
