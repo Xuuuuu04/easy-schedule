@@ -93,7 +93,8 @@ llm = ChatOpenAI(
     model=settings.SILICON_FLOW_MODEL_NAME,
     openai_api_key=settings.SILICON_FLOW_API_KEY,
     openai_api_base=str(settings.SILICON_FLOW_BASE_URL),
-    temperature=0
+    temperature=0,
+    streaming=True
 )
 
 # Bind tools to LLM
