@@ -301,6 +301,21 @@ async def run_agent_stream(user_input: str, thread_id: str = "default"):
             reasoning = None
             if hasattr(chunk, "additional_kwargs"):
                 reasoning = chunk.additional_kwargs.get("reasoning_content")
+                if not reasoning:
+                    delta = chunk.additional_kwargs.get("delta")
+                    if isinstance(delta, dict):
+                        reasoning = delta.get("reasoning_content")
+
+                if not content:
+                    if isinstance(chunk.additional_kwargs.get("content"), str):
+                        content = chunk.additional_kwargs.get("content")
+                    else:
+                        delta = chunk.additional_kwargs.get("delta")
+                        if isinstance(delta, dict):
+                            if isinstance(delta.get("content"), str):
+                                content = delta.get("content")
+                            elif isinstance(delta.get("text"), str):
+                                content = delta.get("text")
             
             # If we found reasoning content, emit it as a thinking type
             if reasoning:
