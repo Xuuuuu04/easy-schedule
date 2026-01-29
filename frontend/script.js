@@ -421,24 +421,51 @@ document.addEventListener('DOMContentLoaded', async function () {
         expandRows: true,
         height: '100%',
         nowIndicator: true, // 显示当前时间指示器
-        events: '/api/courses', // Fetch from backend
+        events: '/api/courses',
         eventContent: function (arg) {
             const viewType = arg.view?.type || '';
             const isMobile = window.innerWidth < 768;
-            if (!isMobile) return true;
 
             const title = arg.event.title || '未命名课程';
             const props = arg.event.extendedProps || {};
             const studentName = props.student_name || '';
             const location = props.location || '';
             const price = props.price;
-            const durationMinutes = (arg.event.end && arg.event.start)
-                ? Math.max(0, Math.round((arg.event.end.getTime() - arg.event.start.getTime()) / 60000))
-                : 0;
 
             const startText = formatHHMM(arg.event.start);
             const endText = formatHHMM(arg.event.end);
             const timeRangeText = startText && endText ? `${startText}-${endText}` : (arg.timeText || '');
+
+            if (viewType === 'dayGridMonth') {
+                if (isMobile) {
+                    const line = studentName
+                        ? `${timeRangeText ? timeRangeText + ' ' : ''}${studentName}`
+                        : `${timeRangeText ? timeRangeText + ' ' : ''}${title}`;
+                    return {
+                        html: `
+                            <div class="month-event-content">
+                                <span class="month-event-title fc-event-title">${escapeHtml(line)}</span>
+                            </div>
+                        `
+                    };
+                }
+
+                const baseTitle = studentName ? `${title} · ${studentName}` : title;
+                return {
+                    html: `
+                        <div class="month-event-content">
+                            ${timeRangeText ? `<span class="month-event-time fc-event-time">${escapeHtml(timeRangeText)}</span>` : ''}
+                            <span class="month-event-title fc-event-title">${escapeHtml(baseTitle)}</span>
+                        </div>
+                    `
+                };
+            }
+
+            if (!isMobile) return true;
+
+            const durationMinutes = (arg.event.end && arg.event.start)
+                ? Math.max(0, Math.round((arg.event.end.getTime() - arg.event.start.getTime()) / 60000))
+                : 0;
 
             const showStudent = Boolean(studentName) && durationMinutes >= 45;
             const showLocation = Boolean(location) && durationMinutes >= 90;
@@ -528,6 +555,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 }
             }
 
+            info.el.style.setProperty('--student-primary', colorInfo.primary);
+
             const eventMain = info.el.querySelector('.fc-event-main');
             if (eventMain) {
                 eventMain.style.borderLeftColor = colorInfo.primary;
@@ -536,6 +565,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const titleEl = info.el.querySelector('.fc-event-title');
                 if (titleEl) {
                     titleEl.style.color = colorInfo.primary;
+                }
+                const timeEl = info.el.querySelector('.fc-event-time');
+                if (timeEl && viewType === 'dayGridMonth') {
+                    timeEl.style.color = colorInfo.primary;
                 }
 
                 // 桌面端：添加额外的课程信息

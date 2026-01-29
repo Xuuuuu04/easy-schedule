@@ -1201,6 +1201,39 @@ body.auth-locked .app-container {
     flex-shrink: 0;
 }
 
+.month-event-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.month-event-time {
+    font-size: 0.7rem;
+    color: var(--student-primary, var(--text-secondary));
+    line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.month-event-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--student-primary, var(--primary-color));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+    .month-event-title {
+        font-size: 0.65rem;
+        font-weight: 500;
+    }
+}
+
 .mobile-list-event {
     display: flex;
     flex-direction: column;
