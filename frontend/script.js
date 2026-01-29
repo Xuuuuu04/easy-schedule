@@ -1958,7 +1958,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const name = document.getElementById('student-name').value.trim();
         const grade = document.getElementById('student-grade').value.trim();
         const phone = document.getElementById('student-phone').value.trim();
-        const parentContact = document.getElementById('student-parent').value.trim();
+        const parent_contact = document.getElementById('student-parent').value.trim();
         const progress = parseInt(document.getElementById('student-progress').value) || 0;
         const notes = document.getElementById('student-notes').value.trim();
 
@@ -2040,7 +2040,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const name = document.getElementById('student-name').value.trim();
         const grade = document.getElementById('student-grade').value.trim();
         const phone = document.getElementById('student-phone').value.trim();
-        const parentContact = document.getElementById('student-parent').value.trim();
+        const parent_contact = document.getElementById('student-parent').value.trim();
         const progress = parseInt(document.getElementById('student-progress').value) || 0;
         const notes = document.getElementById('student-notes').value.trim();
 
