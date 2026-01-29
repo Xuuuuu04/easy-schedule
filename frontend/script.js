@@ -1972,7 +1972,12 @@ document.addEventListener('DOMContentLoaded', async function () {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name, grade, phone, parent_contact, progress, notes
+                    name: name,
+                    grade: grade,
+                    phone: phone,
+                    parent_contact: parent_contact,
+                    progress: progress,
+                    notes: notes
                 })
             });
 
@@ -2054,7 +2059,12 @@ document.addEventListener('DOMContentLoaded', async function () {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name, grade, phone, parent_contact, progress, notes
+                    name: name,
+                    grade: grade,
+                    phone: phone,
+                    parent_contact: parent_contact,
+                    progress: progress,
+                    notes: notes
                 })
             });
 
