@@ -62,3 +62,6 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 9001 --reload
 
 ## 统一源码目录
 - 源码入口：[`src/`](./src)
+
+## 目录结构
+- 结构说明：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
