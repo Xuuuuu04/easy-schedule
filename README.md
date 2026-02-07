@@ -65,3 +65,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 9001 --reload
 
 ## 目录结构
 - 结构说明：[`docs/PROJECT_STRUCTURE.md`](./docs/PROJECT_STRUCTURE.md)
+
+## 迁移说明
+- 已将核心代码物理迁移到 `src/backend` 与 `src/frontend`。
+- 根目录 `backend` / `frontend` 为兼容软链接，现有启动命令仍可使用。
