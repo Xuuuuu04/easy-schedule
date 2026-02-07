@@ -50,3 +50,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 9001 --reload
 ## 部署
 - 本地与线上简要说明：docs/DEPLOYMENT.md
 - 线上服务器关键信息与维护入口：docs/SERVER.md
+
+## 开发进度（截至 2026-02-07）
+- 当前开发进度与已知风险：`docs/PROJECT_STATUS.md`
+- 本仓库以可公开协作为目标维护，功能清单与后续计划以状态文档为准并持续更新。
