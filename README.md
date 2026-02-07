@@ -8,8 +8,8 @@
 - AI 助手：通过 /api/ai/chat 进行流式对话，并可调用后端工具查询/生成信息
 
 ## 目录结构
-- backend/：FastAPI 后端与 AI Agent（LangGraph/LangChain）
-- frontend/：静态前端（由后端挂载到 /）
+- src/backend/：FastAPI 后端与 AI Agent（LangGraph/LangChain）
+- src/frontend/：静态前端（由后端挂载到 /）
 - docs/：部署与服务器信息
 - .env.example：环境变量模板（不包含任何密钥）
 

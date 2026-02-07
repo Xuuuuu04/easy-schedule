@@ -7,7 +7,7 @@ Lightweight course scheduling web app with streaming assistant support.
 - English: [README_EN](./README_EN.md)
 
 ## Project Structure
-Backend: src/backend/; Frontend: src/frontend/; Docs: docs/
+Backend: src/src/backend/; Frontend: src/src/frontend/; Docs: docs/
 
 ## Quick Start
 pip install -r requirements.txt && python -m uvicorn backend.main:app --host 0.0.0.0 --port 9001 --reload
